@@ -31,6 +31,7 @@ from core.screenshot import screenshot_manager
 from core.config import config_manager
 from core.hotkey import hotkey_manager, stop_hotkey_service, start_hotkey_service
 from utils.file_manager import file_manager
+from utils.coordinate_recorder import CoordinateRecorder
 
 
 class MainWindow:
@@ -43,8 +44,9 @@ class MainWindow:
             
         self.root = tk.Tk()
         self.root.title("截图工具 - Jietu (Windows版)")
-        self.root.geometry("500x450")  # 增加窗口高度以容纳新功能
+        self.root.geometry("520x600")  # 增加窗口高度以容纳所有功能
         self.root.resizable(True, True)
+        self.root.minsize(500, 580)  # 设置最小窗口尺寸
         
         # Windows系统特定配置
         if os.name == 'nt':
@@ -60,6 +62,9 @@ class MainWindow:
         
         # 状态变量
         self.is_continuous_capturing = False
+        
+        # 坐标记录器
+        self.coordinate_recorder = CoordinateRecorder()
         
         # 创建界面
         self.create_widgets()
@@ -90,6 +95,10 @@ class MainWindow:
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
         
+        # 确保主框架能够扩展以填充整个窗口  
+        # 只给状态区域设置扩展权重，其他区域保持固定大小
+        main_frame.rowconfigure(6, weight=1)  # 状态信息区域可扩展
+        
         row = 0
         
         # 截图区域设置
@@ -117,8 +126,24 @@ class MainWindow:
         # 应用区域按钮
         ttk.Button(region_frame, text="应用区域", command=self.apply_region).grid(row=0, column=4, rowspan=2, padx=(10, 0))
         
+        # 坐标记录按钮和状态
+        coord_record_frame = ttk.Frame(region_frame)
+        coord_record_frame.grid(row=2, column=0, columnspan=5, pady=(5, 0), sticky=(tk.W, tk.E))
+        coord_record_frame.columnconfigure(2, weight=1)
+        
+        # 分别记录左上角和右下角的按钮
+        self.record_topleft_btn = ttk.Button(coord_record_frame, text="记录左上角", command=self.start_record_topleft)
+        self.record_topleft_btn.grid(row=0, column=0, padx=(0, 5))
+        
+        self.record_bottomright_btn = ttk.Button(coord_record_frame, text="记录右下角", command=self.start_record_bottomright)
+        self.record_bottomright_btn.grid(row=0, column=1, padx=(0, 10))
+        
+        self.coord_status_var = tk.StringVar(value="")
+        self.coord_status_label = ttk.Label(coord_record_frame, textvariable=self.coord_status_var, foreground="blue")
+        self.coord_status_label.grid(row=0, column=2, sticky=tk.W)
+        
         # 添加全屏截图按钮
-        ttk.Button(region_frame, text="全屏截图", command=self.fullscreen_screenshot).grid(row=2, column=0, columnspan=5, pady=(5, 0), sticky=(tk.W, tk.E))
+        ttk.Button(region_frame, text="全屏截图", command=self.fullscreen_screenshot).grid(row=3, column=0, columnspan=5, pady=(5, 0), sticky=(tk.W, tk.E))
         
         row += 1
         
@@ -189,9 +214,7 @@ class MainWindow:
         hotkey_btn_frame.grid(row=3, column=0, columnspan=3, pady=(10, 0))
         
         ttk.Button(hotkey_btn_frame, text="应用快捷键", command=self.apply_hotkeys).grid(row=0, column=0, padx=(0, 5))
-        ttk.Button(hotkey_btn_frame, text="重置默认", command=self.reset_default_hotkeys).grid(row=0, column=1, padx=(0, 5))
-        ttk.Button(hotkey_btn_frame, text="验证快捷键", command=self.validate_hotkeys).grid(row=0, column=2, padx=(0, 5))
-        ttk.Button(hotkey_btn_frame, text="测试快捷键", command=self.test_current_hotkeys).grid(row=0, column=3)
+        ttk.Button(hotkey_btn_frame, text="重置默认", command=self.reset_default_hotkeys).grid(row=0, column=1)
         
         # 快捷键状态显示
         self.hotkey_status_var = tk.StringVar(value="快捷键状态: 未应用")
@@ -456,6 +479,10 @@ class MainWindow:
         if self.is_continuous_capturing:
             self.stop_continuous_screenshot()
         
+        # 停止坐标记录
+        if hasattr(self, 'coordinate_recorder') and self.coordinate_recorder.is_recording():
+            self.coordinate_recorder.stop_recording()
+        
         # 保存设置
         try:
             self.save_settings()
@@ -481,52 +508,7 @@ class MainWindow:
         except:
             return False
     
-    def validate_hotkeys(self):
-        """验证所有快捷键"""
-        single_key = self.single_hotkey_var.get().strip().lower()
-        continuous_key = self.continuous_hotkey_var.get().strip().lower()
-        stop_key = self.stop_hotkey_var.get().strip().lower()
-        
-        results = []
-        
-        # 验证格式
-        is_valid, message = hotkey_manager.validate_hotkey_with_details(single_key)
-        if is_valid:
-            results.append(f"✅ 单次截图: {single_key}")
-        else:
-            results.append(f"❌ 单次截图: {single_key}")
-            results.append(f"   错误: {message}")
-            
-        is_valid, message = hotkey_manager.validate_hotkey_with_details(continuous_key)
-        if is_valid:
-            results.append(f"✅ 连续截图: {continuous_key}")
-        else:
-            results.append(f"❌ 连续截图: {continuous_key}")
-            results.append(f"   错误: {message}")
-            
-        is_valid, message = hotkey_manager.validate_hotkey_with_details(stop_key)
-        if is_valid:
-            results.append(f"✅ 停止截图: {stop_key}")
-        else:
-            results.append(f"❌ 停止截图: {stop_key}")
-            results.append(f"   错误: {message}")
-        
-        # 检查重复
-        hotkeys = [single_key, continuous_key, stop_key]
-        if len(set(hotkeys)) != len(hotkeys):
-            results.append("⚠️ 警告: 存在重复的快捷键")
-        
-        # 添加格式说明
-        results.append("\n" + "="*40)
-        results.append("快捷键格式说明:")
-        results.append("• 基本格式: 修饰键+主键")
-        results.append("• 修饰键: ctrl, shift, alt, win")
-        results.append("• 主键: 字母、数字、功能键等")
-        results.append("• 示例: ctrl+shift+s, alt+f4")
-        
-        # 显示验证结果
-        result_text = "\n".join(results)
-        messagebox.showinfo("快捷键验证结果", result_text)
+
     
     def apply_hotkeys(self):
         """应用自定义快捷键"""
@@ -583,11 +565,8 @@ class MainWindow:
                 self.hotkey_status_var.set("快捷键状态: 已应用并保存")
                 self.update_status("自定义快捷键已应用")
                 
-                success_msg = f"快捷键设置已应用！\n\n"
-                success_msg += f"单次截图: {single_key}\n"
-                success_msg += f"连续截图: {continuous_key}\n" 
-                success_msg += f"停止截图: {stop_key}"
-                messagebox.showinfo("成功", success_msg)
+                success_msg = f"快捷键设置已应用 - 单次:{single_key} 连续:{continuous_key} 停止:{stop_key}"
+                self.update_status(success_msg)
             else:
                 self.hotkey_status_var.set("快捷键状态: 应用失败")
                 messagebox.showerror("错误", "快捷键服务启动失败！")
@@ -792,53 +771,90 @@ class MainWindow:
     def on_hotkey_key_release(self, event):
         """处理快捷键输入框的按键释放事件"""
         return None
+
+    # === 坐标记录功能 ===
     
-    def test_current_hotkeys(self):
-        """测试当前快捷键是否有效"""
-        print("🧪 测试当前快捷键...")
+    def start_record_topleft(self):
+        """开始记录左上角坐标"""
+        if self.coordinate_recorder.is_recording():
+            self.update_status("坐标记录正在进行中，请先完成当前记录")
+            return
         
-        # 获取当前设置
-        single_key = self.single_hotkey_var.get().strip().lower()
-        continuous_key = self.continuous_hotkey_var.get().strip().lower()
-        stop_key = self.stop_hotkey_var.get().strip().lower()
+        def on_single_recorded(x, y):
+            # 在主线程中更新左上角坐标
+            self.root.after(0, lambda: self._fill_topleft_coordinate(x, y))
         
-        # 显示测试信息
-        test_info = f"""快捷键测试信息:
+        def on_status_changed(message):
+            # 在主线程中更新状态
+            self.root.after(0, lambda: self.coord_status_var.set(message))
+        
+        # 启动单次坐标记录
+        if self.coordinate_recorder.start_single_recording(
+            target_description="左上角",
+            on_single_recorded=on_single_recorded,
+            on_status_changed=on_status_changed
+        ):
+            self.update_status("已启动左上角坐标记录，请点击屏幕位置")
+        else:
+            messagebox.showerror("错误", "启动左上角坐标记录失败")
+    
+    def start_record_bottomright(self):
+        """开始记录右下角坐标"""
+        if self.coordinate_recorder.is_recording():
+            self.update_status("坐标记录正在进行中，请先完成当前记录")
+            return
+        
+        def on_single_recorded(x, y):
+            # 在主线程中更新右下角坐标
+            self.root.after(0, lambda: self._fill_bottomright_coordinate(x, y))
+        
+        def on_status_changed(message):
+            # 在主线程中更新状态
+            self.root.after(0, lambda: self.coord_status_var.set(message))
+        
+        # 启动单次坐标记录
+        if self.coordinate_recorder.start_single_recording(
+            target_description="右下角",
+            on_single_recorded=on_single_recorded,
+            on_status_changed=on_status_changed
+        ):
+            self.update_status("已启动右下角坐标记录，请点击屏幕位置")
+        else:
+            messagebox.showerror("错误", "启动右下角坐标记录失败")
+    
+    def _fill_topleft_coordinate(self, x, y):
+        """填充左上角坐标到输入框"""
+        try:
+            self.x1_var.set(str(x))
+            self.y1_var.set(str(y))
+            
+            # 更新状态
+            self.coord_status_var.set(f"左上角坐标已填充: ({x}, {y})")
+            self.update_status(f"左上角坐标已填充: ({x}, {y})")
+            
+            print(f"✅ 左上角坐标已填充: ({x}, {y})")
+            
+        except Exception as e:
+            print(f"❌ 填充左上角坐标失败: {e}")
+            messagebox.showerror("错误", f"填充左上角坐标失败: {e}")
+    
+    def _fill_bottomright_coordinate(self, x, y):
+        """填充右下角坐标到输入框"""
+        try:
+            self.x2_var.set(str(x))
+            self.y2_var.set(str(y))
+            
+            # 更新状态
+            self.coord_status_var.set(f"右下角坐标已填充: ({x}, {y})")
+            self.update_status(f"右下角坐标已填充: ({x}, {y})")
+            
+            print(f"✅ 右下角坐标已填充: ({x}, {y})")
+            
+        except Exception as e:
+            print(f"❌ 填充右下角坐标失败: {e}")
+            messagebox.showerror("错误", f"填充右下角坐标失败: {e}")
+    
 
-当前设置:
-• 单次截图: {single_key}
-• 连续截图: {continuous_key}  
-• 停止截图: {stop_key}
-
-快捷键监听状态: {'运行中' if hotkey_manager.is_listening() else '已停止'}
-已注册快捷键数量: {len(hotkey_manager.get_registered_hotkeys())}
-
-测试说明:
-1. 确保快捷键格式正确
-2. 检查是否与其他软件冲突
-3. 尝试按下快捷键进行测试
-4. 查看控制台输出信息
-
-建议:
-• 如果快捷键不响应，尝试以管理员身份运行
-• 避免使用系统保留的快捷键
-• 确保没有被其他程序占用"""
-        
-        messagebox.showinfo("快捷键测试", test_info)
-        
-        # 在控制台输出调试信息
-        print(f"  当前快捷键设置:")
-        print(f"    单次截图: {single_key}")
-        print(f"    连续截图: {continuous_key}")
-        print(f"    停止截图: {stop_key}")
-        print(f"  快捷键监听状态: {hotkey_manager.is_listening()}")
-        print(f"  已注册快捷键: {list(hotkey_manager.get_registered_hotkeys().keys())}")
-        
-        # 测试快捷键验证
-        for name, key in [('单次截图', single_key), ('连续截图', continuous_key), ('停止截图', stop_key)]:
-            is_valid, message = hotkey_manager.validate_hotkey_with_details(key)
-            status = "✅" if is_valid else "❌"
-            print(f"  {status} {name}({key}): {message}")
 
 
 def create_main_window():
