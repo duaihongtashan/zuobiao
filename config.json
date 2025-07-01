@@ -1,0 +1,42 @@
+{
+  "screenshot": {
+    "default_region": [
+      1750,
+      60,
+      1860,
+      160
+    ],
+    "custom_region": [
+      1080,
+      200,
+      1512,
+      300
+    ],
+    "save_directory": "E:/JB/截图",
+    "continuous_interval": 1.5,
+    "auto_reset_counter": true
+  },
+  "hotkeys": {
+    "single_capture": "ctrl+a",
+    "start_continuous": "ctrl+shift+c",
+    "stop_continuous": "ctrl+shift+x"
+  },
+  "ui": {
+    "window_position": [
+      100,
+      100
+    ],
+    "window_size": [
+      400,
+      300
+    ],
+    "always_on_top": false,
+    "minimize_to_tray": true
+  },
+  "general": {
+    "auto_create_directory": true,
+    "show_notifications": true,
+    "save_format": "PNG",
+    "image_quality": 95
+  }
+}

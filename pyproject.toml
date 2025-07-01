@@ -1,0 +1,15 @@
+[project]
+name = "jietu"
+version = "0.1.0"
+description = "Screenshot tool with GUI - capture specific screen regions"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pillow>=10.0.0",
+    "pynput>=1.7.6",
+    "pyautogui>=0.9.54",
+    "pyqt6>=6.9.1",
+]
+
+[tool.setuptools]
+packages = ["core", "gui", "utils"]
