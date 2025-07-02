@@ -44,9 +44,9 @@ class MainWindow:
             
         self.root = tk.Tk()
         self.root.title("截图工具 - Jietu (Windows版)")
-        self.root.geometry("520x600")  # 增加窗口高度以容纳所有功能
+        self.root.geometry("540x660")  # 进一步增加窗口尺寸以容纳所有组件
         self.root.resizable(True, True)
-        self.root.minsize(500, 580)  # 设置最小窗口尺寸
+        self.root.minsize(520, 620)  # 调整最小窗口尺寸
         
         # Windows系统特定配置
         if os.name == 'nt':
@@ -263,11 +263,16 @@ class MainWindow:
         self.file_count_var = tk.StringVar(value="已保存: 0 张截图")
         ttk.Label(status_frame, textvariable=self.file_count_var).grid(row=1, column=0, sticky=tk.W)
         
+        # 最新截图详情显示
+        self.latest_screenshot_var = tk.StringVar(value="暂无截图")
+        latest_label = ttk.Label(status_frame, textvariable=self.latest_screenshot_var, foreground="green")
+        latest_label.grid(row=2, column=0, sticky=tk.W)
+        
         # 屏幕信息显示
         try:
             screen_size = screenshot_manager.get_screen_size()
             self.screen_info_var = tk.StringVar(value=f"屏幕分辨率: {screen_size[0]}×{screen_size[1]}")
-            ttk.Label(status_frame, textvariable=self.screen_info_var).grid(row=2, column=0, sticky=tk.W)
+            ttk.Label(status_frame, textvariable=self.screen_info_var).grid(row=3, column=0, sticky=tk.W)
         except:
             pass
     
@@ -275,9 +280,15 @@ class MainWindow:
         """执行全屏截图"""
         def capture():
             try:
-                saved_path = screenshot_manager.capture_fullscreen()
-                if saved_path:
-                    self.update_status(f"全屏截图已保存: {os.path.basename(saved_path)}")
+                result = screenshot_manager.capture_fullscreen()
+                if result:
+                    filename = os.path.basename(result['file_path'])
+                    size_info = f"{result['size'][0]}×{result['size'][1]}像素"
+                    file_size_kb = result['file_size'] / 1024
+                    
+                    status_msg = f"全屏截图已保存: {filename} | 大小: {size_info} | 文件: {file_size_kb:.1f}KB"
+                    self.update_status(status_msg)
+                    self.update_latest_screenshot_info(result)
                     self.update_file_count()
                 else:
                     self.update_status("全屏截图失败！")
@@ -326,9 +337,15 @@ class MainWindow:
                 # 更新设置
                 self.apply_current_settings()
                 
-                saved_path = screenshot_manager.capture_single()
-                if saved_path:
-                    self.update_status(f"截图已保存: {os.path.basename(saved_path)}")
+                result = screenshot_manager.capture_single()
+                if result:
+                    filename = os.path.basename(result['file_path'])
+                    size_info = f"{result['size'][0]}×{result['size'][1]}像素"
+                    file_size_kb = result['file_size'] / 1024
+                    
+                    status_msg = f"截图已保存: {filename} | 大小: {size_info} | 文件: {file_size_kb:.1f}KB"
+                    self.update_status(status_msg)
+                    self.update_latest_screenshot_info(result)
                     self.update_file_count()
                 else:
                     self.update_status("截图失败！")
@@ -352,8 +369,14 @@ class MainWindow:
             self.apply_current_settings()
             
             # 开始连续截图
-            def on_capture(saved_path):
-                self.root.after(0, lambda: self.update_status(f"已截图: {os.path.basename(saved_path)}"))
+            def on_capture(result):
+                filename = os.path.basename(result['file_path'])
+                size_info = f"{result['size'][0]}×{result['size'][1]}像素"
+                file_size_kb = result['file_size'] / 1024
+                
+                status_msg = f"已截图: {filename} | {size_info} | {file_size_kb:.1f}KB"
+                self.root.after(0, lambda: self.update_status(status_msg))
+                self.root.after(0, lambda: self.update_latest_screenshot_info(result))
                 self.root.after(0, self.update_file_count)
             
             if screenshot_manager.start_continuous_capture(on_capture):
@@ -444,6 +467,18 @@ class MainWindow:
             
         except Exception as e:
             self.update_status(f"加载设置失败: {e}")
+    
+    def update_latest_screenshot_info(self, result: dict):
+        """更新最新截图详情显示"""
+        try:
+            region_info = f"区域: {result['region'][0]},{result['region'][1]} - {result['region'][2]},{result['region'][3]}"
+            size_info = f"大小: {result['size'][0]}×{result['size'][1]} ({result['pixels']:,}像素)"
+            file_info = f"文件: {result['file_size']/1024:.1f}KB"
+            
+            detail_text = f"最新: {region_info} | {size_info} | {file_info}"
+            self.latest_screenshot_var.set(detail_text)
+        except Exception as e:
+            print(f"更新截图详情失败: {e}")
     
     def update_status(self, message: str):
         """更新状态显示"""
@@ -587,56 +622,65 @@ class MainWindow:
     def register_custom_hotkeys(self, single_key: str, continuous_key: str, stop_key: str):
         """注册自定义快捷键"""
         def single_screenshot_callback():
-            """单次截图回调"""
             try:
-                saved_path = screenshot_manager.capture_single()
-                if saved_path and hasattr(self, 'root'):
-                    self.root.after(0, 
-                        lambda: self.update_status(f"快捷键截图: {os.path.basename(saved_path)}"))
+                self.apply_current_settings()
+                result = screenshot_manager.capture_single()
+                if result:
+                    filename = os.path.basename(result['file_path'])
+                    size_info = f"{result['size'][0]}×{result['size'][1]}像素"
+                    file_size_kb = result['file_size'] / 1024
+                    
+                    status_msg = f"快捷键截图: {filename} | {size_info} | {file_size_kb:.1f}KB"
+                    self.root.after(0, lambda: self.update_status(status_msg))
+                    self.root.after(0, lambda: self.update_latest_screenshot_info(result))
                     self.root.after(0, self.update_file_count)
+                else:
+                    self.root.after(0, lambda: self.update_status("快捷键截图失败！"))
             except Exception as e:
-                print(f"快捷键截图失败: {e}")
+                self.root.after(0, lambda: self.update_status(f"快捷键截图错误: {e}"))
         
         def start_continuous_callback():
-            """开始连续截图回调"""
             try:
-                if not screenshot_manager.is_continuous_capturing():
-                    def on_capture(saved_path):
-                        if hasattr(self, 'root'):
-                            self.root.after(0, 
-                                lambda: self.update_status(f"连续截图: {os.path.basename(saved_path)}"))
-                            self.root.after(0, self.update_file_count)
+                self.apply_current_settings()
+                
+                def on_capture(result):
+                    filename = os.path.basename(result['file_path'])
+                    size_info = f"{result['size'][0]}×{result['size'][1]}像素"
+                    file_size_kb = result['file_size'] / 1024
                     
-                    screenshot_manager.start_continuous_capture(on_capture)
-                    if hasattr(self, 'root'):
-                        self.root.after(0, 
-                            lambda: self.update_status("快捷键启动连续截图"))
-                        self.root.after(0, 
-                            lambda: setattr(self, 'is_continuous_capturing', True))
-                        self.root.after(0, 
-                            lambda: self.continuous_btn.config(text="停止连续截图"))
+                    status_msg = f"连续截图: {filename} | {size_info} | {file_size_kb:.1f}KB"
+                    self.root.after(0, lambda: self.update_status(status_msg))
+                    self.root.after(0, lambda: self.update_latest_screenshot_info(result))
+                    self.root.after(0, self.update_file_count)
+                
+                if screenshot_manager.start_continuous_capture(on_capture):
+                    self.is_continuous_capturing = True
+                    self.root.after(0, lambda: self.continuous_btn.config(text="停止连续截图"))
+                    self.root.after(0, lambda: self.update_status("快捷键启动连续截图..."))
+                else:
+                    self.root.after(0, lambda: self.update_status("快捷键启动连续截图失败！"))
+                    
             except Exception as e:
-                print(f"快捷键启动连续截图失败: {e}")
+                self.root.after(0, lambda: self.update_status(f"快捷键连续截图错误: {e}"))
         
         def stop_continuous_callback():
-            """停止连续截图回调"""
             try:
-                if screenshot_manager.is_continuous_capturing():
-                    screenshot_manager.stop_continuous_capture()
-                    if hasattr(self, 'root'):
-                        self.root.after(0, 
-                            lambda: self.update_status("快捷键停止连续截图"))
-                        self.root.after(0, 
-                            lambda: setattr(self, 'is_continuous_capturing', False))
-                        self.root.after(0, 
-                            lambda: self.continuous_btn.config(text="开始连续截图"))
+                screenshot_manager.stop_continuous_capture()
+                self.is_continuous_capturing = False
+                self.root.after(0, lambda: self.continuous_btn.config(text="开始连续截图"))
+                self.root.after(0, lambda: self.update_status("快捷键停止连续截图"))
             except Exception as e:
-                print(f"快捷键停止连续截图失败: {e}")
+                self.root.after(0, lambda: self.update_status(f"快捷键停止截图错误: {e}"))
         
         # 注册快捷键
-        hotkey_manager.register_hotkey(single_key, single_screenshot_callback, "单次截图")
-        hotkey_manager.register_hotkey(continuous_key, start_continuous_callback, "开始连续截图")
-        hotkey_manager.register_hotkey(stop_key, stop_continuous_callback, "停止连续截图")
+        try:
+            hotkey_manager.register_hotkey(single_key, single_screenshot_callback)
+            hotkey_manager.register_hotkey(continuous_key, start_continuous_callback)
+            hotkey_manager.register_hotkey(stop_key, stop_continuous_callback)
+            return True
+        except Exception as e:
+            print(f"注册快捷键失败: {e}")
+            return False
 
     def start_key_capture(self, var, entry):
         """开始捕获快捷键"""

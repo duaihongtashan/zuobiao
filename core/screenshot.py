@@ -75,7 +75,7 @@ class ScreenshotCapture:
         """重置图片计数器"""
         self.image_counter = 1
     
-    def capture_single(self, save_path: Optional[str] = None) -> Optional[str]:
+    def capture_single(self, save_path: Optional[str] = None) -> Optional[dict]:
         """
         单次截图 - Windows优化版本
         
@@ -83,7 +83,15 @@ class ScreenshotCapture:
             save_path: 可选的保存路径，如果不提供则使用默认命名
             
         Returns:
-            保存的文件路径，失败返回None
+            包含截图信息的字典：
+            {
+                'file_path': str,        # 保存的文件路径
+                'region': tuple,         # 截图区域 (x1, y1, x2, y2)
+                'size': tuple,           # 区域大小 (width, height)
+                'pixels': int,           # 总像素数
+                'file_size': int,        # 文件大小（字节）
+            }
+            失败返回None
         """
         if not self.gui_available:
             print("错误: GUI模块不可用，无法进行截图")
@@ -109,19 +117,39 @@ class ScreenshotCapture:
             
             # 保存图片
             screenshot.save(save_path)
+            
+            # 获取文件大小
+            file_size = os.path.getsize(save_path)
+            
+            # 计算像素总数
+            total_pixels = width * height
+            
+            # 构建返回信息
+            result = {
+                'file_path': save_path,
+                'region': (x1, y1, x2, y2),
+                'size': (width, height),
+                'pixels': total_pixels,
+                'file_size': file_size
+            }
+            
             print(f"截图已保存: {save_path}")
-            return save_path
+            print(f"截图区域: ({x1}, {y1}) 到 ({x2}, {y2})")
+            print(f"区域大小: {width}×{height} 像素 (共{total_pixels:,}像素)")
+            print(f"文件大小: {file_size:,} 字节 ({file_size/1024:.1f}KB)")
+            
+            return result
             
         except Exception as e:
             print(f"截图失败: {e}")
             return None
     
-    def start_continuous_capture(self, on_capture: Optional[Callable[[str], None]] = None):
+    def start_continuous_capture(self, on_capture: Optional[Callable[[dict], None]] = None):
         """
         开始连续截图
         
         Args:
-            on_capture: 每次截图后的回调函数，接收保存路径作为参数
+            on_capture: 每次截图后的回调函数，接收截图信息字典作为参数
         """
         if self.is_capturing:
             return False
@@ -131,9 +159,9 @@ class ScreenshotCapture:
         def capture_loop():
             while self.is_capturing:
                 try:
-                    saved_path = self.capture_single()
-                    if saved_path and on_capture:
-                        on_capture(saved_path)
+                    result = self.capture_single()
+                    if result and on_capture:
+                        on_capture(result)
                     
                     # 等待指定间隔
                     time.sleep(self.capture_interval)
@@ -185,7 +213,7 @@ class ScreenshotCapture:
         except Exception:
             return False
     
-    def capture_fullscreen(self, save_path: Optional[str] = None) -> Optional[str]:
+    def capture_fullscreen(self, save_path: Optional[str] = None) -> Optional[dict]:
         """
         全屏截图 - Windows系统优化
         
@@ -193,7 +221,15 @@ class ScreenshotCapture:
             save_path: 保存路径
             
         Returns:
-            保存的文件路径
+            包含截图信息的字典：
+            {
+                'file_path': str,        # 保存的文件路径
+                'region': tuple,         # 截图区域 (x1, y1, x2, y2)
+                'size': tuple,           # 区域大小 (width, height)
+                'pixels': int,           # 总像素数
+                'file_size': int,        # 文件大小（字节）
+            }
+            失败返回None
         """
         if not self.gui_available:
             print("错误: GUI模块不可用，无法进行截图")
@@ -210,8 +246,31 @@ class ScreenshotCapture:
                 save_path = os.path.join(self.save_directory, filename)
             
             screenshot.save(save_path)
+            
+            # 获取屏幕尺寸作为截图区域
+            screen_width, screen_height = self.get_screen_size()
+            
+            # 获取文件大小
+            file_size = os.path.getsize(save_path)
+            
+            # 计算像素总数
+            total_pixels = screen_width * screen_height
+            
+            # 构建返回信息
+            result = {
+                'file_path': save_path,
+                'region': (0, 0, screen_width, screen_height),
+                'size': (screen_width, screen_height),
+                'pixels': total_pixels,
+                'file_size': file_size
+            }
+            
             print(f"全屏截图已保存: {save_path}")
-            return save_path
+            print(f"全屏区域: 0, 0 到 {screen_width}, {screen_height}")
+            print(f"区域大小: {screen_width}×{screen_height} 像素 (共{total_pixels:,}像素)")
+            print(f"文件大小: {file_size:,} 字节 ({file_size/1024:.1f}KB)")
+            
+            return result
             
         except Exception as e:
             print(f"全屏截图失败: {e}")
