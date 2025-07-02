@@ -105,7 +105,7 @@ class ModernHotkeyManager:
             # 如果监听器正在运行，重新启动以应用新的快捷键
             if self.running:
                 self._restart_listener()
-                
+            
         except Exception as e:
             print(f"❌ 注册快捷键失败 {hotkey_str}: {e}")
     
