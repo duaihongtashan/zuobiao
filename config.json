@@ -7,17 +7,60 @@
       160
     ],
     "custom_region": [
-      603,
-      169,
-      1183,
-      627
+      100,
+      100,
+      300,
+      300
     ],
-    "save_directory": "E:/JB/截图",
+    "save_directory": "screenshots",
     "continuous_interval": 1.5,
     "auto_reset_counter": true
   },
+  "circle_detection": {
+    "enabled": true,
+    "hough_params": {
+      "dp": 1.0,
+      "min_dist": 50,
+      "param1": 50,
+      "param2": 30,
+      "min_radius": 10,
+      "max_radius": 100
+    },
+    "custom_circle": {
+      "enabled": true,
+      "center_x": 200,
+      "center_y": 150,
+      "radius": 75
+    },
+    "preprocessing": {
+      "blur_kernel_size": 5,
+      "median_blur_size": 5,
+      "use_clahe": true,
+      "clahe_clip_limit": 2.0,
+      "clahe_tile_grid_size": [
+        8,
+        8
+      ]
+    },
+    "filtering": {
+      "min_confidence": 0.3,
+      "max_circles": 10,
+      "overlap_threshold": 0.7
+    },
+    "capture": {
+      "save_individual": true,
+      "save_combined": false,
+      "transparent_background": true,
+      "padding": 10,
+      "anti_alias": true
+    },
+    "save_paths": {
+      "circle_images": "screenshots/circles",
+      "detection_data": "screenshots/circle_data"
+    }
+  },
   "hotkeys": {
-    "single_capture": "ctrl+a",
+    "single_capture": "ctrl+shift+s",
     "start_continuous": "ctrl+shift+c",
     "stop_continuous": "ctrl+shift+x"
   },

@@ -21,6 +21,46 @@ class ConfigManager:
                 "continuous_interval": 1.0,  # 连续截图间隔(秒)
                 "auto_reset_counter": True,  # 是否每次启动重置计数器
             },
+            "circle_detection": {
+                "enabled": True,  # 是否启用圆形检测功能
+                "hough_params": {
+                    "dp": 1.0,  # 累加器分辨率比例
+                    "min_dist": 50,  # 圆心间最小距离
+                    "param1": 50,  # Canny边缘检测高阈值
+                    "param2": 30,  # 累加器阈值
+                    "min_radius": 10,  # 最小半径
+                    "max_radius": 100,  # 最大半径
+                },
+                "custom_circle": {
+                    "enabled": False,  # 是否启用自定义圆形截图
+                    "center_x": 100,  # 自定义圆心X坐标
+                    "center_y": 100,  # 自定义圆心Y坐标
+                    "radius": 50,  # 自定义半径
+                },
+                "preprocessing": {
+                    "blur_kernel_size": 5,  # 高斯模糊核大小
+                    "median_blur_size": 5,  # 中值滤波核大小
+                    "use_clahe": True,  # 是否使用CLAHE直方图均衡化
+                    "clahe_clip_limit": 2.0,  # CLAHE剪裁限制
+                    "clahe_tile_grid_size": [8, 8],  # CLAHE瓦片网格大小
+                },
+                "filtering": {
+                    "min_confidence": 0.3,  # 最小置信度阈值
+                    "max_circles": 10,  # 最大圆形数量
+                    "overlap_threshold": 0.7,  # 重叠阈值
+                },
+                "capture": {
+                    "save_individual": True,  # 保存单独的圆形图像
+                    "save_combined": False,  # 保存组合图像
+                    "transparent_background": True,  # 透明背景
+                    "padding": 10,  # 边界填充像素
+                    "anti_alias": True,  # 抗锯齿
+                },
+                "save_paths": {
+                    "circle_images": "screenshots/circles",  # 圆形图像保存目录
+                    "detection_data": "screenshots/circle_data",  # 检测数据保存目录
+                }
+            },
             "hotkeys": {
                 "single_capture": "ctrl+shift+s",  # 单次截图快捷键
                 "start_continuous": "ctrl+shift+c",  # 开始连续截图快捷键
@@ -175,6 +215,149 @@ class ConfigManager:
     def get_continuous_interval(self) -> float:
         """获取连续截图间隔"""
         return self.get('screenshot.continuous_interval', 1.0)
+    
+    # === 圆形检测配置方法 ===
+    
+    def is_circle_detection_enabled(self) -> bool:
+        """获取圆形检测是否启用"""
+        return self.get('circle_detection.enabled', True)
+    
+    def set_circle_detection_enabled(self, enabled: bool):
+        """设置圆形检测启用状态"""
+        self.set('circle_detection.enabled', enabled)
+    
+    def get_hough_params(self) -> Dict[str, Any]:
+        """获取HoughCircles检测参数"""
+        return self.get('circle_detection.hough_params', {
+            "dp": 1.0,
+            "min_dist": 50,
+            "param1": 50,
+            "param2": 30,
+            "min_radius": 10,
+            "max_radius": 100
+        })
+    
+    def set_hough_params(self, params: Dict[str, Any]):
+        """设置HoughCircles检测参数"""
+        current_params = self.get_hough_params()
+        current_params.update(params)
+        self.set('circle_detection.hough_params', current_params)
+    
+    def get_preprocessing_params(self) -> Dict[str, Any]:
+        """获取图像预处理参数"""
+        return self.get('circle_detection.preprocessing', {
+            "blur_kernel_size": 5,
+            "median_blur_size": 5,
+            "use_clahe": True,
+            "clahe_clip_limit": 2.0,
+            "clahe_tile_grid_size": [8, 8]
+        })
+    
+    def set_preprocessing_params(self, params: Dict[str, Any]):
+        """设置图像预处理参数"""
+        current_params = self.get_preprocessing_params()
+        current_params.update(params)
+        self.set('circle_detection.preprocessing', current_params)
+    
+    def get_filtering_params(self) -> Dict[str, Any]:
+        """获取圆形过滤参数"""
+        return self.get('circle_detection.filtering', {
+            "min_confidence": 0.3,
+            "max_circles": 10,
+            "overlap_threshold": 0.7
+        })
+    
+    def set_filtering_params(self, params: Dict[str, Any]):
+        """设置圆形过滤参数"""
+        current_params = self.get_filtering_params()
+        current_params.update(params)
+        self.set('circle_detection.filtering', current_params)
+    
+    def get_capture_params(self) -> Dict[str, Any]:
+        """获取圆形截图参数"""
+        return self.get('circle_detection.capture', {
+            "save_individual": True,
+            "save_combined": False,
+            "transparent_background": True,
+            "padding": 10,
+            "anti_alias": True
+        })
+    
+    def set_capture_params(self, params: Dict[str, Any]):
+        """设置圆形截图参数"""
+        current_params = self.get_capture_params()
+        current_params.update(params)
+        self.set('circle_detection.capture', current_params)
+    
+    def get_circle_save_paths(self) -> Dict[str, str]:
+        """获取圆形保存路径配置"""
+        return self.get('circle_detection.save_paths', {
+            "circle_images": "screenshots/circles",
+            "detection_data": "screenshots/circle_data"
+        })
+    
+    def set_circle_save_paths(self, paths: Dict[str, str]):
+        """设置圆形保存路径配置"""
+        current_paths = self.get_circle_save_paths()
+        current_paths.update(paths)
+        self.set('circle_detection.save_paths', current_paths)
+    
+    def get_circle_images_directory(self) -> str:
+        """获取圆形图像保存目录"""
+        paths = self.get_circle_save_paths()
+        return paths.get('circle_images', 'screenshots/circles')
+    
+    def get_circle_data_directory(self) -> str:
+        """获取圆形检测数据保存目录"""
+        paths = self.get_circle_save_paths()
+        return paths.get('detection_data', 'screenshots/circle_data')
+    
+    # === 自定义圆形配置方法 ===
+    
+    def is_custom_circle_enabled(self) -> bool:
+        """获取自定义圆形截图是否启用"""
+        return self.get('circle_detection.custom_circle.enabled', False)
+    
+    def set_custom_circle_enabled(self, enabled: bool):
+        """设置自定义圆形截图启用状态"""
+        self.set('circle_detection.custom_circle.enabled', enabled)
+    
+    def get_custom_circle_center(self) -> Tuple[int, int]:
+        """获取自定义圆心坐标"""
+        center_x = self.get('circle_detection.custom_circle.center_x', 100)
+        center_y = self.get('circle_detection.custom_circle.center_y', 100)
+        return (center_x, center_y)
+    
+    def set_custom_circle_center(self, x: int, y: int):
+        """设置自定义圆心坐标"""
+        self.set('circle_detection.custom_circle.center_x', x)
+        self.set('circle_detection.custom_circle.center_y', y)
+    
+    def get_custom_circle_radius(self) -> int:
+        """获取自定义圆形半径"""
+        return self.get('circle_detection.custom_circle.radius', 50)
+    
+    def set_custom_circle_radius(self, radius: int):
+        """设置自定义圆形半径"""
+        self.set('circle_detection.custom_circle.radius', max(5, radius))  # 最小半径5像素
+    
+    def get_custom_circle_params(self) -> Dict[str, Any]:
+        """获取所有自定义圆形参数"""
+        return {
+            "enabled": self.is_custom_circle_enabled(),
+            "center_x": self.get('circle_detection.custom_circle.center_x', 100),
+            "center_y": self.get('circle_detection.custom_circle.center_y', 100),
+            "radius": self.get('circle_detection.custom_circle.radius', 50)
+        }
+    
+    def set_custom_circle_params(self, params: Dict[str, Any]):
+        """设置自定义圆形参数"""
+        if "enabled" in params:
+            self.set_custom_circle_enabled(params["enabled"])
+        if "center_x" in params and "center_y" in params:
+            self.set_custom_circle_center(params["center_x"], params["center_y"])
+        if "radius" in params:
+            self.set_custom_circle_radius(params["radius"])
     
     def reset_to_defaults(self):
         """重置为默认配置"""

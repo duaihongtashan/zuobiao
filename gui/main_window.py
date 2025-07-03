@@ -30,6 +30,8 @@ def _import_gui_modules():
 from core.screenshot import screenshot_manager
 from core.config import config_manager
 from core.hotkey import hotkey_manager, stop_hotkey_service, start_hotkey_service
+from core.circle_detection import circle_detector, DetectionParams
+from core.circle_capture import circle_capture
 from utils.file_manager import file_manager
 from utils.coordinate_recorder import CoordinateRecorder
 
@@ -44,9 +46,9 @@ class MainWindow:
             
         self.root = tk.Tk()
         self.root.title("截图工具 - Jietu (Windows版)")
-        self.root.geometry("540x660")  # 进一步增加窗口尺寸以容纳所有组件
+        self.root.geometry("580x820")  # 增加尺寸以容纳圆形检测功能
         self.root.resizable(True, True)
-        self.root.minsize(520, 620)  # 调整最小窗口尺寸
+        self.root.minsize(560, 780)  # 调整最小窗口尺寸
         
         # Windows系统特定配置
         if os.name == 'nt':
@@ -62,6 +64,9 @@ class MainWindow:
         
         # 状态变量
         self.is_continuous_capturing = False
+        self.circle_detection_enabled = False
+        self.current_detected_circles = []
+        self.circle_preview_image = None
         
         # 坐标记录器
         self.coordinate_recorder = CoordinateRecorder()
@@ -228,25 +233,165 @@ class MainWindow:
         
         row += 1
         
-        # 控制按钮
-        control_frame = ttk.Frame(main_frame)
-        control_frame.grid(row=row, column=0, columnspan=2, pady=(10, 0))
+        # 圆形检测功能区域
+        circle_frame = ttk.LabelFrame(main_frame, text="圆形检测功能", padding="5")
+        circle_frame.grid(row=row, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        circle_frame.columnconfigure(1, weight=1)
         
-        self.single_btn = ttk.Button(control_frame, text="单次截图", command=self.single_screenshot)
+        # 启用圆形检测
+        self.circle_detection_var = tk.BooleanVar(value=False)
+        circle_enable_cb = ttk.Checkbutton(circle_frame, text="启用圆形检测", 
+                                         variable=self.circle_detection_var,
+                                         command=self.toggle_circle_detection)
+        circle_enable_cb.grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 5))
+        
+        # 检测参数调整
+        params_frame = ttk.Frame(circle_frame)
+        params_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(5, 5))
+        params_frame.columnconfigure(1, weight=1)
+        params_frame.columnconfigure(3, weight=1)
+        
+        # 参数1：最小半径
+        ttk.Label(params_frame, text="最小半径:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
+        self.min_radius_var = tk.StringVar(value="10")
+        min_radius_spinbox = ttk.Spinbox(params_frame, from_=5, to=100, increment=5,
+                                       textvariable=self.min_radius_var, width=8)
+        min_radius_spinbox.grid(row=0, column=1, sticky=tk.W, padx=(0, 10))
+        
+        # 参数2：最大半径
+        ttk.Label(params_frame, text="最大半径:").grid(row=0, column=2, sticky=tk.W, padx=(0, 5))
+        self.max_radius_var = tk.StringVar(value="100")
+        max_radius_spinbox = ttk.Spinbox(params_frame, from_=20, to=300, increment=10,
+                                       textvariable=self.max_radius_var, width=8)
+        max_radius_spinbox.grid(row=0, column=3, sticky=tk.W)
+        
+        # 参数3：最小距离
+        ttk.Label(params_frame, text="最小距离:").grid(row=1, column=0, sticky=tk.W, padx=(0, 5))
+        self.min_dist_var = tk.StringVar(value="50")
+        min_dist_spinbox = ttk.Spinbox(params_frame, from_=20, to=150, increment=10,
+                                     textvariable=self.min_dist_var, width=8)
+        min_dist_spinbox.grid(row=1, column=1, sticky=tk.W, padx=(0, 10))
+        
+        # 参数4：检测阈值
+        ttk.Label(params_frame, text="检测阈值:").grid(row=1, column=2, sticky=tk.W, padx=(0, 5))
+        self.param2_var = tk.StringVar(value="30")
+        param2_spinbox = ttk.Spinbox(params_frame, from_=20, to=80, increment=5,
+                                   textvariable=self.param2_var, width=8)
+        param2_spinbox.grid(row=1, column=3, sticky=tk.W)
+        
+        # 圆形检测控制按钮
+        circle_control_frame = ttk.Frame(circle_frame)
+        circle_control_frame.grid(row=2, column=0, columnspan=2, pady=(10, 5))
+        
+        self.detect_circles_btn = ttk.Button(circle_control_frame, text="检测圆形", 
+                                           command=self.detect_circles_in_region,
+                                           state="disabled")
+        self.detect_circles_btn.grid(row=0, column=0, padx=(0, 5))
+        
+        self.capture_circles_btn = ttk.Button(circle_control_frame, text="截图圆形", 
+                                            command=self.capture_detected_circles,
+                                            state="disabled")
+        self.capture_circles_btn.grid(row=0, column=1, padx=(0, 5))
+        
+        self.clear_circles_btn = ttk.Button(circle_control_frame, text="清除结果", 
+                                          command=self.clear_detected_circles,
+                                          state="disabled")
+        self.clear_circles_btn.grid(row=0, column=2)
+        
+        # 检测结果显示
+        self.circle_results_var = tk.StringVar(value="暂无检测结果")
+        circle_results_label = ttk.Label(circle_frame, textvariable=self.circle_results_var, 
+                                       foreground="blue")
+        circle_results_label.grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+        
+        row += 1
+        
+        # 自定义圆形截图功能区域
+        custom_circle_frame = ttk.LabelFrame(main_frame, text="自定义圆形截图", padding="5")
+        custom_circle_frame.grid(row=row, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        custom_circle_frame.columnconfigure(1, weight=1)
+        
+        # 启用自定义圆形截图
+        self.custom_circle_enabled_var = tk.BooleanVar(value=False)
+        custom_circle_enable_cb = ttk.Checkbutton(custom_circle_frame, text="启用自定义圆形截图", 
+                                                 variable=self.custom_circle_enabled_var,
+                                                 command=self.toggle_custom_circle)
+        custom_circle_enable_cb.grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 5))
+        
+        # 圆心坐标设置
+        center_frame = ttk.Frame(custom_circle_frame)
+        center_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(5, 5))
+        center_frame.columnconfigure(1, weight=1)
+        center_frame.columnconfigure(3, weight=1)
+        
+        ttk.Label(center_frame, text="圆心 X:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
+        self.custom_circle_x_var = tk.StringVar(value="100")
+        self.custom_circle_x_entry = ttk.Entry(center_frame, textvariable=self.custom_circle_x_var, width=10)
+        self.custom_circle_x_entry.grid(row=0, column=1, sticky=tk.W, padx=(0, 10))
+        
+        ttk.Label(center_frame, text="Y:").grid(row=0, column=2, sticky=tk.W, padx=(0, 5))
+        self.custom_circle_y_var = tk.StringVar(value="100")
+        self.custom_circle_y_entry = ttk.Entry(center_frame, textvariable=self.custom_circle_y_var, width=10)
+        self.custom_circle_y_entry.grid(row=0, column=3, sticky=tk.W, padx=(0, 10))
+        
+        # 记录圆心坐标按钮
+        self.record_circle_center_btn = ttk.Button(center_frame, text="记录圆心", 
+                                                  command=self.start_record_circle_center,
+                                                  state="disabled")
+        self.record_circle_center_btn.grid(row=0, column=4, padx=(5, 0))
+        
+        # 半径设置
+        radius_frame = ttk.Frame(custom_circle_frame)
+        radius_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(5, 5))
+        
+        ttk.Label(radius_frame, text="半径:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
+        self.custom_circle_radius_var = tk.StringVar(value="50")
+        radius_spinbox = ttk.Spinbox(radius_frame, from_=5, to=500, increment=5,
+                                   textvariable=self.custom_circle_radius_var, width=10)
+        radius_spinbox.grid(row=0, column=1, sticky=tk.W, padx=(0, 10))
+        
+        ttk.Label(radius_frame, text="像素").grid(row=0, column=2, sticky=tk.W, padx=(5, 0))
+        
+        # 自定义圆形状态显示
+        self.custom_circle_status_var = tk.StringVar(value="")
+        custom_circle_status_label = ttk.Label(custom_circle_frame, textvariable=self.custom_circle_status_var, 
+                                             foreground="blue")
+        custom_circle_status_label.grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+        
+        row += 1
+        
+        # 控制按钮 - 重新组织布局
+        control_frame = ttk.LabelFrame(main_frame, text="操作控制", padding="10")
+        control_frame.grid(row=row, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
+        
+        # 截图操作按钮区域
+        screenshot_buttons_frame = ttk.Frame(control_frame)
+        screenshot_buttons_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        self.single_btn = ttk.Button(screenshot_buttons_frame, text="单次截图", command=self.single_screenshot)
         self.single_btn.grid(row=0, column=0, padx=(0, 10))
         
-        self.continuous_btn = ttk.Button(control_frame, text="开始连续截图", command=self.toggle_continuous_screenshot)
+        self.continuous_btn = ttk.Button(screenshot_buttons_frame, text="开始连续截图", command=self.toggle_continuous_screenshot)
         self.continuous_btn.grid(row=0, column=1, padx=(0, 10))
         
-        self.save_settings_btn = ttk.Button(control_frame, text="保存设置", command=self.save_settings)
-        self.save_settings_btn.grid(row=0, column=2, padx=(0, 10))
+        # 添加截图模式指示标签
+        self.screenshot_mode_var = tk.StringVar(value="当前模式: 矩形截图")
+        mode_label = ttk.Label(screenshot_buttons_frame, textvariable=self.screenshot_mode_var, foreground="green")
+        mode_label.grid(row=0, column=2, padx=(20, 0))
         
-        self.open_folder_btn = ttk.Button(control_frame, text="打开目录", command=self.open_save_directory)
-        self.open_folder_btn.grid(row=0, column=3, padx=(0, 10))
+        # 系统操作按钮区域
+        system_buttons_frame = ttk.Frame(control_frame)
+        system_buttons_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E))
+        
+        self.save_settings_btn = ttk.Button(system_buttons_frame, text="保存设置", command=self.save_settings)
+        self.save_settings_btn.grid(row=0, column=0, padx=(0, 10))
+        
+        self.open_folder_btn = ttk.Button(system_buttons_frame, text="打开目录", command=self.open_save_directory)
+        self.open_folder_btn.grid(row=0, column=1, padx=(0, 10))
         
         # 添加退出按钮
-        self.exit_btn = ttk.Button(control_frame, text="退出程序", command=self.on_close)
-        self.exit_btn.grid(row=0, column=4)
+        self.exit_btn = ttk.Button(system_buttons_frame, text="退出程序", command=self.on_close)
+        self.exit_btn.grid(row=0, column=2)
         
         row += 1
         
@@ -337,18 +482,41 @@ class MainWindow:
                 # 更新设置
                 self.apply_current_settings()
                 
-                result = screenshot_manager.capture_single()
+                # 检查是否启用自定义圆形截图
+                if self.custom_circle_enabled_var.get():
+                    # 使用自定义圆形截图
+                    params = self.get_custom_circle_params()
+                    if params and params['center_x'] and params['center_y'] and params['radius']:
+                        result = screenshot_manager.capture_custom_circle(
+                            params['center_x'], 
+                            params['center_y'], 
+                            params['radius']
+                        )
+                        screenshot_type = "圆形"
+                    else:
+                        self.update_status("自定义圆形参数无效！")
+                        return
+                else:
+                    # 使用普通矩形截图
+                    result = screenshot_manager.capture_single()
+                    screenshot_type = "矩形"
+                
                 if result:
                     filename = os.path.basename(result['file_path'])
                     size_info = f"{result['size'][0]}×{result['size'][1]}像素"
                     file_size_kb = result['file_size'] / 1024
                     
-                    status_msg = f"截图已保存: {filename} | 大小: {size_info} | 文件: {file_size_kb:.1f}KB"
+                    if result.get('screenshot_type') == 'custom_circle':
+                        center_info = f"圆心: ({result['circle_center'][0]}, {result['circle_center'][1]}), 半径: {result['circle_radius']}"
+                        status_msg = f"{screenshot_type}截图已保存: {filename} | {center_info} | 文件: {file_size_kb:.1f}KB"
+                    else:
+                        status_msg = f"{screenshot_type}截图已保存: {filename} | 大小: {size_info} | 文件: {file_size_kb:.1f}KB"
+                    
                     self.update_status(status_msg)
                     self.update_latest_screenshot_info(result)
                     self.update_file_count()
                 else:
-                    self.update_status("截图失败！")
+                    self.update_status(f"{screenshot_type}截图失败！")
             except Exception as e:
                 self.update_status(f"截图错误: {e}")
         
@@ -368,26 +536,80 @@ class MainWindow:
             # 应用当前设置
             self.apply_current_settings()
             
+            # 检查是否启用自定义圆形截图
+            use_custom_circle = self.custom_circle_enabled_var.get()
+            custom_circle_params = None
+            
+            if use_custom_circle:
+                custom_circle_params = self.get_custom_circle_params()
+                if not (custom_circle_params and custom_circle_params['center_x'] and 
+                       custom_circle_params['center_y'] and custom_circle_params['radius']):
+                    self.update_status("自定义圆形参数无效，无法启动连续截图！")
+                    return
+            
             # 开始连续截图
             def on_capture(result):
                 filename = os.path.basename(result['file_path'])
-                size_info = f"{result['size'][0]}×{result['size'][1]}像素"
                 file_size_kb = result['file_size'] / 1024
                 
-                status_msg = f"已截图: {filename} | {size_info} | {file_size_kb:.1f}KB"
+                if result.get('screenshot_type') == 'custom_circle':
+                    center_info = f"圆心: ({result['circle_center'][0]}, {result['circle_center'][1]}), 半径: {result['circle_radius']}"
+                    status_msg = f"圆形截图: {filename} | {center_info} | {file_size_kb:.1f}KB"
+                else:
+                    size_info = f"{result['size'][0]}×{result['size'][1]}像素"
+                    status_msg = f"矩形截图: {filename} | {size_info} | {file_size_kb:.1f}KB"
+                
                 self.root.after(0, lambda: self.update_status(status_msg))
                 self.root.after(0, lambda: self.update_latest_screenshot_info(result))
                 self.root.after(0, self.update_file_count)
             
-            if screenshot_manager.start_continuous_capture(on_capture):
-                self.is_continuous_capturing = True
-                self.continuous_btn.config(text="停止连续截图")
-                self.update_status("连续截图已开始...")
+            # 根据模式启动不同的连续截图
+            if use_custom_circle:
+                # 启动自定义圆形连续截图
+                if self.start_custom_circle_continuous_capture(custom_circle_params, on_capture):
+                    self.is_continuous_capturing = True
+                    self.continuous_btn.config(text="停止连续截图")
+                    self.update_status("圆形连续截图已开始...")
+                else:
+                    self.update_status("启动圆形连续截图失败！")
             else:
-                self.update_status("启动连续截图失败！")
+                # 启动普通连续截图
+                if screenshot_manager.start_continuous_capture(on_capture):
+                    self.is_continuous_capturing = True
+                    self.continuous_btn.config(text="停止连续截图")
+                    self.update_status("矩形连续截图已开始...")
+                else:
+                    self.update_status("启动矩形连续截图失败！")
                 
         except Exception as e:
             self.update_status(f"连续截图错误: {e}")
+    
+    def start_custom_circle_continuous_capture(self, params, on_capture_callback):
+        """启动自定义圆形连续截图"""
+        import time
+        
+        def circle_capture_loop():
+            while self.is_continuous_capturing:
+                try:
+                    result = screenshot_manager.capture_custom_circle(
+                        params['center_x'], 
+                        params['center_y'], 
+                        params['radius']
+                    )
+                    if result and on_capture_callback:
+                        on_capture_callback(result)
+                    
+                    # 等待指定间隔
+                    time.sleep(screenshot_manager.capture_interval)
+                    
+                except Exception as e:
+                    print(f"圆形连续截图错误: {e}")
+                    break
+        
+        # 启动后台线程
+        self.continuous_capture_thread = threading.Thread(target=circle_capture_loop, daemon=True)
+        self.continuous_capture_thread.start()
+        return True
     
     def stop_continuous_screenshot(self):
         """停止连续截图"""
@@ -425,6 +647,20 @@ class MainWindow:
             config_manager.set_hotkey("start_continuous", self.continuous_hotkey_var.get().strip().lower())
             config_manager.set_hotkey("stop_continuous", self.stop_hotkey_var.get().strip().lower())
             
+            # 保存圆形检测设置
+            config_manager.set_circle_detection_enabled(self.circle_detection_var.get())
+            
+            hough_params = {
+                'min_radius': int(self.min_radius_var.get()),
+                'max_radius': int(self.max_radius_var.get()),
+                'min_dist': int(self.min_dist_var.get()),
+                'param2': int(self.param2_var.get())
+            }
+            config_manager.set_hough_params(hough_params)
+            
+            # 保存自定义圆形设置
+            self.apply_custom_circle_settings()
+            
             config_manager.save_config()
             self.update_status("设置已保存")
         except Exception as e:
@@ -457,11 +693,35 @@ class MainWindow:
             self.continuous_hotkey_var.set(continuous_hotkey)
             self.stop_hotkey_var.set(stop_hotkey)
             
+            # 加载圆形检测设置
+            circle_enabled = config_manager.is_circle_detection_enabled()
+            self.circle_detection_var.set(circle_enabled)
+            
+            hough_params = config_manager.get_hough_params()
+            self.min_radius_var.set(str(hough_params.get('min_radius', 10)))
+            self.max_radius_var.set(str(hough_params.get('max_radius', 100)))
+            self.min_dist_var.set(str(hough_params.get('min_dist', 50)))
+            self.param2_var.set(str(hough_params.get('param2', 30)))
+            
+            # 加载自定义圆形设置
+            custom_circle_params = config_manager.get_custom_circle_params()
+            self.custom_circle_enabled_var.set(custom_circle_params.get('enabled', False))
+            self.custom_circle_x_var.set(str(custom_circle_params.get('center_x', 100)))
+            self.custom_circle_y_var.set(str(custom_circle_params.get('center_y', 100)))
+            self.custom_circle_radius_var.set(str(custom_circle_params.get('radius', 50)))
+            
+            # 应用自定义圆形设置状态
+            self.toggle_custom_circle()
+            
             # 应用设置到管理器
             screenshot_manager.set_capture_region(x1, y1, x2, y2)
             screenshot_manager.set_save_directory(save_dir)
             screenshot_manager.set_capture_interval(interval)
             file_manager.set_base_directory(save_dir)
+            
+            # 设置圆形截图保存目录
+            circle_save_dir = config_manager.get_circle_images_directory()
+            circle_capture.set_save_directory(circle_save_dir)
             
             self.update_file_count()
             
@@ -624,18 +884,42 @@ class MainWindow:
         def single_screenshot_callback():
             try:
                 self.apply_current_settings()
-                result = screenshot_manager.capture_single()
+                
+                # 检查是否启用自定义圆形截图
+                if self.custom_circle_enabled_var.get():
+                    # 使用自定义圆形截图
+                    params = self.get_custom_circle_params()
+                    if params and params['center_x'] and params['center_y'] and params['radius']:
+                        result = screenshot_manager.capture_custom_circle(
+                            params['center_x'], 
+                            params['center_y'], 
+                            params['radius']
+                        )
+                        screenshot_type = "圆形"
+                    else:
+                        self.root.after(0, lambda: self.update_status("快捷键圆形截图失败：参数无效！"))
+                        return
+                else:
+                    # 使用普通矩形截图
+                    result = screenshot_manager.capture_single()
+                    screenshot_type = "矩形"
+                
                 if result:
                     filename = os.path.basename(result['file_path'])
-                    size_info = f"{result['size'][0]}×{result['size'][1]}像素"
                     file_size_kb = result['file_size'] / 1024
                     
-                    status_msg = f"快捷键截图: {filename} | {size_info} | {file_size_kb:.1f}KB"
+                    if result.get('screenshot_type') == 'custom_circle':
+                        center_info = f"圆心: ({result['circle_center'][0]}, {result['circle_center'][1]}), 半径: {result['circle_radius']}"
+                        status_msg = f"快捷键{screenshot_type}截图: {filename} | {center_info} | {file_size_kb:.1f}KB"
+                    else:
+                        size_info = f"{result['size'][0]}×{result['size'][1]}像素"
+                        status_msg = f"快捷键{screenshot_type}截图: {filename} | {size_info} | {file_size_kb:.1f}KB"
+                    
                     self.root.after(0, lambda: self.update_status(status_msg))
                     self.root.after(0, lambda: self.update_latest_screenshot_info(result))
                     self.root.after(0, self.update_file_count)
                 else:
-                    self.root.after(0, lambda: self.update_status("快捷键截图失败！"))
+                    self.root.after(0, lambda: self.update_status(f"快捷键{screenshot_type}截图失败！"))
             except Exception as e:
                 self.root.after(0, lambda: self.update_status(f"快捷键截图错误: {e}"))
         
@@ -815,6 +1099,315 @@ class MainWindow:
     def on_hotkey_key_release(self, event):
         """处理快捷键输入框的按键释放事件"""
         return None
+
+    # === 圆形检测功能 ===
+    
+    def toggle_circle_detection(self):
+        """切换圆形检测功能"""
+        self.circle_detection_enabled = self.circle_detection_var.get()
+        
+        if self.circle_detection_enabled:
+            # 启用圆形检测
+            self.detect_circles_btn.config(state="normal")
+            self.update_status("圆形检测功能已启用")
+            
+            # 应用配置到检测器
+            self.apply_circle_detection_params()
+        else:
+            # 禁用圆形检测
+            self.detect_circles_btn.config(state="disabled")
+            self.capture_circles_btn.config(state="disabled")
+            self.clear_circles_btn.config(state="disabled")
+            self.update_status("圆形检测功能已禁用")
+            
+            # 清除检测结果
+            self.clear_detected_circles()
+    
+    def apply_circle_detection_params(self):
+        """应用圆形检测参数"""
+        try:
+            # 获取GUI参数
+            min_radius = int(self.min_radius_var.get())
+            max_radius = int(self.max_radius_var.get())
+            min_dist = int(self.min_dist_var.get())
+            param2 = int(self.param2_var.get())
+            
+            # 创建检测参数
+            params = DetectionParams(
+                min_radius=min_radius,
+                max_radius=max_radius,
+                min_dist=min_dist,
+                param2=param2
+            )
+            
+            # 应用到检测器
+            circle_detector.set_params(params)
+            
+        except ValueError as e:
+            self.update_status(f"参数设置错误: {e}")
+    
+    def detect_circles_in_region(self):
+        """在指定区域检测圆形"""
+        def detect_task():
+            try:
+                self.root.after(0, lambda: self.update_status("正在检测圆形..."))
+                
+                # 检查OpenCV是否可用
+                try:
+                    import cv2
+                except ImportError as e:
+                    self.root.after(0, lambda: self.update_status("圆形检测功能需要OpenCV，请安装: pip install opencv-python"))
+                    return
+                
+                # 获取截图区域
+                x1, y1, x2, y2 = screenshot_manager.get_capture_region()
+                
+                # 创建临时截图用于检测（不保存到用户目录）
+                import tempfile
+                import os
+                import time
+                
+                # 使用临时文件路径
+                temp_dir = tempfile.gettempdir()
+                temp_filename = f"circle_detection_temp_{int(time.time())}.png"
+                temp_screenshot_path = os.path.join(temp_dir, temp_filename)
+                
+                # 截取区域图像到临时路径
+                region_screenshot = screenshot_manager.capture_single(save_path=temp_screenshot_path)
+                if not region_screenshot:
+                    self.root.after(0, lambda: self.update_status("截图失败，请检查截图功能是否正常"))
+                    return
+                
+                # 验证文件是否存在
+                if not os.path.exists(region_screenshot['file_path']):
+                    self.root.after(0, lambda: self.update_status(f"临时截图文件创建失败: {region_screenshot['file_path']}"))
+                    return
+                
+                # 读取图像文件进行检测
+                image = cv2.imread(region_screenshot['file_path'])
+                if image is None:
+                    self.root.after(0, lambda: self.update_status(f"图像读取失败，文件可能损坏: {region_screenshot['file_path']}"))
+                    # 清理临时文件
+                    try:
+                        os.remove(region_screenshot['file_path'])
+                    except:
+                        pass
+                    return
+                
+                # 应用检测参数
+                self.apply_circle_detection_params()
+                
+                # 执行圆形检测
+                detected_circles = circle_detector.detect_circles(image)
+                
+                # 过滤结果
+                filtered_circles = circle_detector.filter_circles(detected_circles)
+                
+                # 调整坐标到全局坐标系
+                global_circles = []
+                for circle in filtered_circles:
+                    global_circle = circle.__class__(
+                        x=circle.x + x1,
+                        y=circle.y + y1,
+                        radius=circle.radius,
+                        confidence=circle.confidence,
+                        adjusted=circle.adjusted
+                    )
+                    global_circles.append(global_circle)
+                
+                # 更新检测结果
+                self.current_detected_circles = global_circles
+                
+                # 在主线程中更新UI
+                self.root.after(0, lambda: self.update_circle_detection_results(len(global_circles)))
+                
+                # 清理临时文件
+                try:
+                    os.remove(region_screenshot['file_path'])
+                except Exception as cleanup_error:
+                    print(f"清理临时文件失败: {cleanup_error}")
+                
+            except Exception as e:
+                # 发生异常时也要清理临时文件
+                try:
+                    if 'region_screenshot' in locals() and region_screenshot:
+                        os.remove(region_screenshot['file_path'])
+                except:
+                    pass
+                self.root.after(0, lambda: self.update_status(f"圆形检测失败: {e}"))
+        
+        # 在后台线程中执行检测
+        import threading
+        threading.Thread(target=detect_task, daemon=True).start()
+    
+    def capture_detected_circles(self):
+        """截图检测到的圆形"""
+        if not self.current_detected_circles:
+            self.update_status("没有检测到圆形，请先进行圆形检测")
+            return
+        
+        def capture_task():
+            try:
+                self.root.after(0, lambda: self.update_status("正在截图圆形..."))
+                
+                # 获取全屏截图用于圆形截图
+                full_screenshot_result = screenshot_manager.capture_fullscreen()
+                if not full_screenshot_result:
+                    self.root.after(0, lambda: self.update_status("全屏截图失败"))
+                    return
+                
+                # 读取全屏图像
+                import cv2
+                full_image = cv2.imread(full_screenshot_result['file_path'])
+                if full_image is None:
+                    self.root.after(0, lambda: self.update_status("全屏图像读取失败"))
+                    return
+                
+                # 设置圆形截图保存目录
+                circle_save_dir = config_manager.get_circle_images_directory()
+                circle_capture.set_save_directory(circle_save_dir)
+                
+                # 执行圆形截图
+                capture_results = circle_capture.capture_circles(
+                    full_image, 
+                    self.current_detected_circles,
+                    save_individual=True,
+                    save_combined=True
+                )
+                
+                # 更新UI显示结果
+                if capture_results["successful_captures"] > 0:
+                    success_msg = f"成功截图 {capture_results['successful_captures']} 个圆形"
+                    self.root.after(0, lambda: self.update_status(success_msg))
+                    self.root.after(0, self.update_file_count)
+                else:
+                    self.root.after(0, lambda: self.update_status("圆形截图失败"))
+                
+            except Exception as e:
+                self.root.after(0, lambda: self.update_status(f"圆形截图错误: {e}"))
+        
+        # 在后台线程中执行截图
+        import threading
+        threading.Thread(target=capture_task, daemon=True).start()
+    
+    def clear_detected_circles(self):
+        """清除检测结果"""
+        self.current_detected_circles = []
+        self.circle_preview_image = None
+        self.circle_results_var.set("暂无检测结果")
+        self.capture_circles_btn.config(state="disabled")
+        self.clear_circles_btn.config(state="disabled")
+        self.update_status("已清除圆形检测结果")
+    
+    def update_circle_detection_results(self, circle_count: int):
+        """更新圆形检测结果显示"""
+        if circle_count > 0:
+            result_text = f"检测到 {circle_count} 个圆形"
+            if circle_count > 5:
+                result_text += f" (显示前5个，置信度: "
+                top_confidences = [f"{c.confidence:.2f}" for c in self.current_detected_circles[:5]]
+                result_text += ", ".join(top_confidences) + ")"
+            else:
+                confidences = [f"{c.confidence:.2f}" for c in self.current_detected_circles]
+                result_text += f" (置信度: {', '.join(confidences)})"
+            
+            self.circle_results_var.set(result_text)
+            self.capture_circles_btn.config(state="normal")
+            self.clear_circles_btn.config(state="normal")
+            self.update_status(f"圆形检测完成，发现 {circle_count} 个圆形")
+        else:
+            self.circle_results_var.set("未检测到圆形")
+            self.capture_circles_btn.config(state="disabled")
+            self.clear_circles_btn.config(state="normal")
+            self.update_status("圆形检测完成，未发现圆形")
+
+    # === 自定义圆形截图功能 ===
+    
+    def toggle_custom_circle(self):
+        """切换自定义圆形截图功能"""
+        enabled = self.custom_circle_enabled_var.get()
+        
+        if enabled:
+            # 启用自定义圆形截图
+            self.custom_circle_x_entry.config(state="normal")
+            self.custom_circle_y_entry.config(state="normal")
+            self.record_circle_center_btn.config(state="normal")
+            self.custom_circle_status_var.set("自定义圆形截图已启用")
+            self.screenshot_mode_var.set("当前模式: 圆形截图")
+            self.update_status("自定义圆形截图功能已启用")
+        else:
+            # 禁用自定义圆形截图
+            self.custom_circle_x_entry.config(state="normal")  # 保持可编辑
+            self.custom_circle_y_entry.config(state="normal")  # 保持可编辑
+            self.record_circle_center_btn.config(state="disabled")
+            self.custom_circle_status_var.set("")
+            self.screenshot_mode_var.set("当前模式: 矩形截图")
+            self.update_status("自定义圆形截图功能已禁用")
+    
+    def start_record_circle_center(self):
+        """开始记录圆心坐标"""
+        if self.coordinate_recorder.is_recording():
+            self.update_status("坐标记录正在进行中，请先完成当前记录")
+            return
+        
+        def on_center_recorded(x, y):
+            # 在主线程中更新圆心坐标
+            self.root.after(0, lambda: self._fill_circle_center_coordinate(x, y))
+        
+        def on_status_changed(message):
+            # 在主线程中更新状态
+            self.root.after(0, lambda: self.custom_circle_status_var.set(message))
+        
+        # 启动单次坐标记录
+        if self.coordinate_recorder.start_single_recording(
+            target_description="圆心",
+            on_single_recorded=on_center_recorded,
+            on_status_changed=on_status_changed
+        ):
+            self.update_status("已启动圆心坐标记录，请点击屏幕位置")
+        else:
+            messagebox.showerror("错误", "启动圆心坐标记录失败")
+    
+    def _fill_circle_center_coordinate(self, x, y):
+        """填充圆心坐标到输入框"""
+        try:
+            self.custom_circle_x_var.set(str(x))
+            self.custom_circle_y_var.set(str(y))
+            
+            # 更新状态
+            self.custom_circle_status_var.set(f"圆心坐标已填充: ({x}, {y})")
+            self.update_status(f"圆心坐标已填充: ({x}, {y})")
+            
+            print(f"✅ 圆心坐标已填充: ({x}, {y})")
+            
+        except Exception as e:
+            print(f"❌ 填充圆心坐标失败: {e}")
+            messagebox.showerror("错误", f"填充圆心坐标失败: {e}")
+    
+    def get_custom_circle_params(self):
+        """获取当前自定义圆形参数"""
+        try:
+            enabled = self.custom_circle_enabled_var.get()
+            center_x = int(self.custom_circle_x_var.get())
+            center_y = int(self.custom_circle_y_var.get())
+            radius = int(self.custom_circle_radius_var.get())
+            
+            return {
+                "enabled": enabled,
+                "center_x": center_x,
+                "center_y": center_y,
+                "radius": radius
+            }
+        except ValueError:
+            return None
+    
+    def apply_custom_circle_settings(self):
+        """应用自定义圆形设置"""
+        params = self.get_custom_circle_params()
+        if params:
+            config_manager.set_custom_circle_params(params)
+            return True
+        return False
 
     # === 坐标记录功能 ===
     
