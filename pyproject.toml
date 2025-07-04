@@ -10,6 +10,8 @@ dependencies = [
     "pyautogui>=0.9.54",
     "pyqt6>=6.9.1",
     "pyinstaller>=6.14.1",
+    "numpy>=2.3.1",
+    "opencv-python>=4.8.0",
 ]
 
 [tool.setuptools]

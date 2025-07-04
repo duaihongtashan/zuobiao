@@ -39,6 +39,8 @@ def _import_gui_modules():
 from core.screenshot import screenshot_manager
 from core.config import config_manager
 from core.hotkey import hotkey_manager, register_screenshot_hotkeys, start_hotkey_service, stop_hotkey_service
+from core.circle_detection import circle_detector
+from core.circle_capture import circle_capture
 from utils.file_manager import file_manager
 
 
@@ -151,6 +153,25 @@ class JietuApplication:
             # 初始化文件管理器
             file_manager.set_base_directory(config_manager.get_save_directory())
             
+            # 初始化圆形检测和截图功能
+            if config_manager.is_circle_detection_enabled():
+                # 设置圆形截图保存目录
+                circle_save_dir = config_manager.get_circle_images_directory()
+                circle_capture.set_save_directory(circle_save_dir)
+                
+                # 应用检测参数
+                hough_params = config_manager.get_hough_params()
+                from core.circle_detection import DetectionParams
+                detection_params = DetectionParams(
+                    min_radius=hough_params.get('min_radius', 10),
+                    max_radius=hough_params.get('max_radius', 100),
+                    min_dist=hough_params.get('min_dist', 50),
+                    param2=hough_params.get('param2', 30)
+                )
+                circle_detector.set_params(detection_params)
+                
+                print("圆形检测功能已初始化")
+            
             print("管理器初始化完成")
             
         except Exception as e:
@@ -234,6 +255,15 @@ class JietuApplication:
                 print("  Ctrl+Shift+S: 单次截图")
                 print("  Ctrl+Shift+C: 开始连续截图")
                 print("  Ctrl+Shift+X: 停止连续截图")
+                
+                # 显示圆形检测功能状态
+                if config_manager.is_circle_detection_enabled():
+                    print("✅ 圆形检测功能已启用")
+                    print("   - 支持HoughCircles算法检测圆形")
+                    print("   - 支持圆形区域精确截图")
+                    print("   - 支持透明背景和抗锯齿")
+                else:
+                    print("ℹ️  圆形检测功能已禁用（可在GUI中启用）")
                 
                 # 运行GUI主循环
                 self.main_window.run()

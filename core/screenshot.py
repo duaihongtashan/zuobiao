@@ -275,6 +275,102 @@ class ScreenshotCapture:
         except Exception as e:
             print(f"全屏截图失败: {e}")
             return None
+    
+    def capture_custom_circle(self, center_x: int, center_y: int, radius: int, 
+                             save_path: Optional[str] = None) -> Optional[dict]:
+        """
+        自定义圆形截图
+        
+        Args:
+            center_x: 圆心X坐标
+            center_y: 圆心Y坐标  
+            radius: 半径
+            save_path: 可选的保存路径
+            
+        Returns:
+            包含截图信息的字典，失败返回None
+        """
+        if not self.gui_available:
+            print("错误: GUI模块不可用，无法进行截图")
+            return None
+            
+        try:
+            # 先进行全屏截图
+            full_screenshot = pyautogui.screenshot()
+            
+            # 转换为OpenCV格式
+            import cv2
+            import numpy as np
+            from PIL import Image
+            
+            # PIL to OpenCV
+            open_cv_image = np.array(full_screenshot)
+            # 转换RGB到BGR (OpenCV使用BGR)
+            open_cv_image = cv2.cvtColor(open_cv_image, cv2.COLOR_RGB2BGR)
+            
+            # 创建Circle对象用于circle_capture
+            from core.circle_detection import Circle
+            circle = Circle(x=center_x, y=center_y, radius=radius, confidence=1.0)
+            
+            # 使用circle_capture提取圆形区域
+            from core.circle_capture import circle_capture
+            circle_image = circle_capture.extract_circle_region(
+                open_cv_image, circle, 
+                padding=0, 
+                transparent_background=True
+            )
+            
+            if circle_image is None:
+                print("圆形区域提取失败")
+                return None
+            
+            # 确定保存路径
+            if not save_path:
+                os.makedirs(self.save_directory, exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"custom_circle_{self.image_counter:04d}_{timestamp}.png"
+                save_path = os.path.join(self.save_directory, filename)
+                self.image_counter += 1
+            
+            # 保存为PNG（支持透明度）
+            pil_image = Image.fromarray(circle_image, 'RGBA')
+            pil_image.save(save_path, 'PNG')
+            
+            # 获取文件大小
+            file_size = os.path.getsize(save_path)
+            
+            # 计算圆形区域的边界框
+            x1 = max(0, center_x - radius)
+            y1 = max(0, center_y - radius)
+            x2 = min(full_screenshot.width, center_x + radius)
+            y2 = min(full_screenshot.height, center_y + radius)
+            
+            width = x2 - x1
+            height = y2 - y1
+            total_pixels = width * height
+            
+            # 构建返回信息
+            result = {
+                'file_path': save_path,
+                'region': (x1, y1, x2, y2),
+                'size': (width, height),
+                'pixels': total_pixels,
+                'file_size': file_size,
+                'circle_center': (center_x, center_y),
+                'circle_radius': radius,
+                'screenshot_type': 'custom_circle'
+            }
+            
+            print(f"自定义圆形截图已保存: {save_path}")
+            print(f"圆心: ({center_x}, {center_y})，半径: {radius}")
+            print(f"边界框: ({x1}, {y1}) 到 ({x2}, {y2})")
+            print(f"文件大小: {file_size:,} 字节 ({file_size/1024:.1f}KB)")
+            
+            return result
+            
+        except Exception as e:
+            print(f"自定义圆形截图失败: {e}")
+            return None
 
 
 # 全局截图实例
