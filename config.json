@@ -7,10 +7,10 @@
       160
     ],
     "custom_region": [
-      1798,
-      97,
-      1913,
-      177
+      1680,
+      8,
+      1902,
+      231
     ],
     "save_directory": "F:/测试",
     "continuous_interval": 1.5,
@@ -28,9 +28,9 @@
     },
     "custom_circle": {
       "enabled": true,
-      "center_x": 1873,
-      "center_y": 131,
-      "radius": 19
+      "center_x": 1808,
+      "center_y": 114,
+      "radius": 82
     },
     "preprocessing": {
       "blur_kernel_size": 5,

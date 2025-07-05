@@ -493,7 +493,7 @@ class MainWindow:
                 if self.custom_circle_enabled_var.get():
                     # 使用自定义圆形截图
                     params = self.get_custom_circle_params()
-                    if params and params['center_x'] and params['center_y'] and params['radius']:
+                    if params and params.get('center_x') is not None and params.get('center_y') is not None and params.get('radius') is not None:
                         result = screenshot_manager.capture_custom_circle(
                             params['center_x'], 
                             params['center_y'], 
@@ -510,13 +510,13 @@ class MainWindow:
                 
                 if result:
                     filename = os.path.basename(result['file_path'])
-                    size_info = f"{result['size'][0]}×{result['size'][1]}像素"
                     file_size_kb = result['file_size'] / 1024
                     
                     if result.get('screenshot_type') == 'custom_circle':
                         center_info = f"圆心: ({result['circle_center'][0]}, {result['circle_center'][1]}), 半径: {result['circle_radius']}"
                         status_msg = f"{screenshot_type}截图已保存: {filename} | {center_info} | 文件: {file_size_kb:.1f}KB"
                     else:
+                        size_info = f"{result['size'][0]}×{result['size'][1]}像素"
                         status_msg = f"{screenshot_type}截图已保存: {filename} | 大小: {size_info} | 文件: {file_size_kb:.1f}KB"
                     
                     self.update_status(status_msg)
@@ -532,30 +532,29 @@ class MainWindow:
     
     def toggle_continuous_screenshot(self):
         """切换连续截图状态"""
-        if not self.is_continuous_capturing:
+        # 修复时序Bug：在切换前先判断，避免竞争条件
+        is_currently_capturing = self.is_continuous_capturing
+        
+        # UI/状态更新应该在所有逻辑之前，并且是同步的
+        if not is_currently_capturing:
+            self.is_continuous_capturing = True
+            self.continuous_btn.config(text="停止连续截图")
             self.start_continuous_screenshot()
         else:
+            self.is_continuous_capturing = False
+            self.continuous_btn.config(text="开始连续截图")
             self.stop_continuous_screenshot()
     
     def start_continuous_screenshot(self):
-        """开始连续截图"""
+        """开始连续截图的核心逻辑"""
         try:
             # 应用当前设置
             self.apply_current_settings()
             
-            # 检查是否启用自定义圆形截图
             use_custom_circle = self.custom_circle_enabled_var.get()
-            custom_circle_params = None
             
-            if use_custom_circle:
-                custom_circle_params = self.get_custom_circle_params()
-                if not (custom_circle_params and custom_circle_params['center_x'] and 
-                       custom_circle_params['center_y'] and custom_circle_params['radius']):
-                    self.update_status("自定义圆形参数无效，无法启动连续截图！")
-                    return
-            
-            # 开始连续截图
             def on_capture(result):
+                # ... (on_capture logic remains the same)
                 filename = os.path.basename(result['file_path'])
                 file_size_kb = result['file_size'] / 1024
                 
@@ -570,26 +569,29 @@ class MainWindow:
                 self.root.after(0, lambda: self.update_latest_screenshot_info(result))
                 self.root.after(0, self.update_file_count)
             
-            # 根据模式启动不同的连续截图
             if use_custom_circle:
-                # 启动自定义圆形连续截图
-                if self.start_custom_circle_continuous_capture(custom_circle_params, on_capture):
-                    self.is_continuous_capturing = True
-                    self.continuous_btn.config(text="停止连续截图")
-                    self.update_status("圆形连续截图已开始...")
-                else:
-                    self.update_status("启动圆形连续截图失败！")
+                custom_circle_params = self.get_custom_circle_params()
+                if not (custom_circle_params and custom_circle_params.get('center_x') is not None and 
+                       custom_circle_params.get('center_y') is not None and custom_circle_params.get('radius') is not None):
+                    self.update_status("自定义圆形参数无效，无法启动！")
+                    self.is_continuous_capturing = False # 启动失败，重置状态
+                    self.continuous_btn.config(text="开始连续截图")
+                    return
+
+                self.update_status("圆形连续截图已开始...")
+                self.start_custom_circle_continuous_capture(custom_circle_params, on_capture)
+
             else:
-                # 启动普通连续截图
-                if screenshot_manager.start_continuous_capture(on_capture):
-                    self.is_continuous_capturing = True
-                    self.continuous_btn.config(text="停止连续截图")
-                    self.update_status("矩形连续截图已开始...")
-                else:
+                self.update_status("矩形连续截图已开始...")
+                if not screenshot_manager.start_continuous_capture(on_capture):
                     self.update_status("启动矩形连续截图失败！")
-                
+                    self.is_continuous_capturing = False # 启动失败，重置状态
+                    self.continuous_btn.config(text="开始连续截图")
+
         except Exception as e:
             self.update_status(f"连续截图错误: {e}")
+            self.is_continuous_capturing = False # 出现异常，重置状态
+            self.continuous_btn.config(text="开始连续截图")
     
     def start_custom_circle_continuous_capture(self, params, on_capture_callback):
         """启动自定义圆形连续截图"""
@@ -619,10 +621,9 @@ class MainWindow:
         return True
     
     def stop_continuous_screenshot(self):
-        """停止连续截图"""
+        """停止连续截图的核心逻辑"""
+        # self.is_continuous_capturing 已经在 toggle 中设置
         screenshot_manager.stop_continuous_capture()
-        self.is_continuous_capturing = False
-        self.continuous_btn.config(text="开始连续截图")
         self.update_status("连续截图已停止")
     
     def apply_current_settings(self):
@@ -820,8 +821,24 @@ class MainWindow:
         # 关闭窗口
         self.root.destroy()
     
+    def _safe_start_continuous(self):
+        """线程安全地启动连续截图（供快捷键调用）"""
+        if not self.is_continuous_capturing:
+            self.start_continuous_screenshot()
+        else:
+            self.update_status("快捷键操作：连续截图已在运行")
+            
+    def _safe_stop_continuous(self):
+        """线程安全地停止连续截图（供快捷键调用）"""
+        if self.is_continuous_capturing:
+            self.stop_continuous_screenshot()
+        else:
+            self.update_status("快捷键操作：连续截图未在运行")
+    
     def run(self):
         """运行主窗口"""
+        # 启动时自动应用在load_settings中加载的快捷键
+        self.apply_hotkeys()
         self.root.mainloop()
 
     def validate_hotkey_format(self, hotkey_str: str) -> bool:
@@ -914,86 +931,23 @@ class MainWindow:
     
     def register_custom_hotkeys(self, single_key: str, continuous_key: str, stop_key: str):
         """注册自定义快捷键"""
+        
+        # 核心修复：确保快捷键调用与GUI按钮完全相同的方法，并保证线程安全
+        
         def single_screenshot_callback():
-            try:
-                self.apply_current_settings()
-                
-                # 检查是否启用自定义圆形截图
-                if self.custom_circle_enabled_var.get():
-                    # 使用自定义圆形截图
-                    params = self.get_custom_circle_params()
-                    if params and params['center_x'] and params['center_y'] and params['radius']:
-                        result = screenshot_manager.capture_custom_circle(
-                            params['center_x'], 
-                            params['center_y'], 
-                            params['radius']
-                        )
-                        screenshot_type = "圆形"
-                    else:
-                        self.root.after(0, lambda: self.update_status("快捷键圆形截图失败：参数无效！"))
-                        return
-                else:
-                    # 使用普通矩形截图
-                    result = screenshot_manager.capture_single()
-                    screenshot_type = "矩形"
-                
-                if result:
-                    filename = os.path.basename(result['file_path'])
-                    file_size_kb = result['file_size'] / 1024
-                    
-                    if result.get('screenshot_type') == 'custom_circle':
-                        center_info = f"圆心: ({result['circle_center'][0]}, {result['circle_center'][1]}), 半径: {result['circle_radius']}"
-                        status_msg = f"快捷键{screenshot_type}截图: {filename} | {center_info} | {file_size_kb:.1f}KB"
-                    else:
-                        size_info = f"{result['size'][0]}×{result['size'][1]}像素"
-                        status_msg = f"快捷键{screenshot_type}截图: {filename} | {size_info} | {file_size_kb:.1f}KB"
-                    
-                    self.root.after(0, lambda: self.update_status(status_msg))
-                    self.root.after(0, lambda: self.update_latest_screenshot_info(result))
-                    self.root.after(0, self.update_file_count)
-                else:
-                    self.root.after(0, lambda: self.update_status(f"快捷键{screenshot_type}截图失败！"))
-            except Exception as e:
-                self.root.after(0, lambda: self.update_status(f"快捷键截图错误: {e}"))
+            # 直接调用单次截图按钮的方法
+            self.root.after(0, self.single_screenshot)
         
-        def start_continuous_callback():
-            try:
-                self.apply_current_settings()
-                
-                def on_capture(result):
-                    filename = os.path.basename(result['file_path'])
-                    size_info = f"{result['size'][0]}×{result['size'][1]}像素"
-                    file_size_kb = result['file_size'] / 1024
-                    
-                    status_msg = f"连续截图: {filename} | {size_info} | {file_size_kb:.1f}KB"
-                    self.root.after(0, lambda: self.update_status(status_msg))
-                    self.root.after(0, lambda: self.update_latest_screenshot_info(result))
-                    self.root.after(0, self.update_file_count)
-                
-                if screenshot_manager.start_continuous_capture(on_capture):
-                    self.is_continuous_capturing = True
-                    self.root.after(0, lambda: self.continuous_btn.config(text="停止连续截图"))
-                    self.root.after(0, lambda: self.update_status("快捷键启动连续截图..."))
-                else:
-                    self.root.after(0, lambda: self.update_status("快捷键启动连续截图失败！"))
-                    
-            except Exception as e:
-                self.root.after(0, lambda: self.update_status(f"快捷键连续截图错误: {e}"))
-        
-        def stop_continuous_callback():
-            try:
-                screenshot_manager.stop_continuous_capture()
-                self.is_continuous_capturing = False
-                self.root.after(0, lambda: self.continuous_btn.config(text="开始连续截图"))
-                self.root.after(0, lambda: self.update_status("快捷键停止连续截图"))
-            except Exception as e:
-                self.root.after(0, lambda: self.update_status(f"快捷键停止截图错误: {e}"))
-        
+        def toggle_continuous_callback():
+            # 直接调用连续截图按钮的 toggle 方法
+            self.root.after(0, self.toggle_continuous_screenshot)
+
         # 注册快捷键
         try:
             hotkey_manager.register_hotkey(single_key, single_screenshot_callback)
-            hotkey_manager.register_hotkey(continuous_key, start_continuous_callback)
-            hotkey_manager.register_hotkey(stop_key, stop_continuous_callback)
+            # 让开始和停止快捷键都调用同一个切换方法
+            hotkey_manager.register_hotkey(continuous_key, toggle_continuous_callback)
+            hotkey_manager.register_hotkey(stop_key, toggle_continuous_callback)
             return True
         except Exception as e:
             print(f"注册快捷键失败: {e}")
@@ -1149,7 +1103,6 @@ class MainWindow:
         else:
             # 禁用圆形检测
             self.detect_circles_btn.config(state="disabled")
-            self.capture_circles_btn.config(state="disabled")
             self.clear_circles_btn.config(state="disabled")
             self.update_status("圆形检测功能已禁用")
             

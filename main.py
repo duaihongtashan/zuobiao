@@ -11,6 +11,7 @@
 import sys
 import signal
 import threading
+import os
 
 # 全局变量用于GUI模块
 tk = None
@@ -52,92 +53,6 @@ class JietuApplication:
         self.hotkey_initialized = False
         self.gui_available = False
         
-    def initialize_hotkeys(self, main_window):
-        """初始化快捷键 - 支持自定义配置"""
-        if self.hotkey_initialized:
-            return
-            
-        try:
-            # 从配置加载快捷键设置
-            single_key = config_manager.get_hotkey("single_capture") or "ctrl+shift+s"
-            continuous_key = config_manager.get_hotkey("start_continuous") or "ctrl+shift+c"
-            stop_key = config_manager.get_hotkey("stop_continuous") or "ctrl+shift+x"
-            
-            # 定义快捷键回调函数
-            def single_screenshot():
-                """单次截图回调"""
-                try:
-                    saved_path = screenshot_manager.capture_single()
-                    if saved_path and main_window:
-                        # 更新GUI状态（线程安全）
-                        main_window.root.after(0, 
-                            lambda: main_window.update_status(f"快捷键截图: {saved_path.split('/')[-1]}"))
-                        main_window.root.after(0, main_window.update_file_count)
-                except Exception as e:
-                    print(f"快捷键截图失败: {e}")
-            
-            def start_continuous_screenshot():
-                """开始连续截图回调"""
-                try:
-                    if not screenshot_manager.is_continuous_capturing():
-                        def on_capture(saved_path):
-                            if main_window:
-                                main_window.root.after(0, 
-                                    lambda: main_window.update_status(f"连续截图: {saved_path.split('/')[-1]}"))
-                                main_window.root.after(0, main_window.update_file_count)
-                        
-                        screenshot_manager.start_continuous_capture(on_capture)
-                        if main_window:
-                            main_window.root.after(0, 
-                                lambda: main_window.update_status("快捷键启动连续截图"))
-                            # 更新GUI按钮状态
-                            main_window.root.after(0, 
-                                lambda: setattr(main_window, 'is_continuous_capturing', True))
-                            main_window.root.after(0, 
-                                lambda: main_window.continuous_btn.config(text="停止连续截图"))
-                except Exception as e:
-                    print(f"快捷键启动连续截图失败: {e}")
-            
-            def stop_continuous_screenshot():
-                """停止连续截图回调"""
-                try:
-                    if screenshot_manager.is_continuous_capturing():
-                        screenshot_manager.stop_continuous_capture()
-                        if main_window:
-                            main_window.root.after(0, 
-                                lambda: main_window.update_status("快捷键停止连续截图"))
-                            # 更新GUI按钮状态
-                            main_window.root.after(0, 
-                                lambda: setattr(main_window, 'is_continuous_capturing', False))
-                            main_window.root.after(0, 
-                                lambda: main_window.continuous_btn.config(text="开始连续截图"))
-                except Exception as e:
-                    print(f"快捷键停止连续截图失败: {e}")
-            
-            # 使用自定义快捷键注册
-            from core.hotkey import register_screenshot_hotkeys_custom
-            register_screenshot_hotkeys_custom(
-                single_screenshot,
-                start_continuous_screenshot, 
-                stop_continuous_screenshot,
-                single_key,
-                continuous_key,
-                stop_key
-            )
-            
-            # 启动快捷键服务
-            if start_hotkey_service():
-                self.hotkey_initialized = True
-                print(f"自定义快捷键服务已启动:")
-                print(f"  单次截图: {single_key}")
-                print(f"  连续截图: {continuous_key}")
-                print(f"  停止截图: {stop_key}")
-            else:
-                print("快捷键服务启动失败")
-                
-        except Exception as e:
-            print(f"初始化快捷键失败: {e}")
-    
     def initialize_managers(self):
         """初始化各个管理器"""
         try:
@@ -247,14 +162,8 @@ class JietuApplication:
             gui_success = self.create_gui()
             
             if gui_success and self.main_window:
-                # GUI模式成功启动, 初始化快捷键并传入窗口实例
-                self.initialize_hotkeys(self.main_window)
-                
+                # GUI模式成功启动, 让GUI自己处理快捷键
                 print("截图工具已启动 (GUI模式)")
-                print("快捷键:")
-                print("  Ctrl+Shift+S: 单次截图")
-                print("  Ctrl+Shift+C: 开始连续截图")
-                print("  Ctrl+Shift+X: 停止连续截图")
                 
                 # 显示圆形检测功能状态
                 if config_manager.is_circle_detection_enabled():

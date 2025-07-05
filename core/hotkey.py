@@ -91,9 +91,8 @@ class ModernHotkeyManager:
             def safe_callback():
                 try:
                     print(f"🔥 快捷键触发: {hotkey_str} ({description})")
-                    # 在新线程中执行回调，避免阻塞快捷键监听
-                    callback_thread = threading.Thread(target=callback, daemon=True)
-                    callback_thread.start()
+                    # 直接执行回调。GUI相关的回调已经通过 root.after() 保证了线程安全和非阻塞。
+                    callback()
                 except Exception as e:
                     print(f"❌ 快捷键回调执行失败 {hotkey_str}: {e}")
             
