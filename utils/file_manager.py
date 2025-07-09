@@ -3,7 +3,7 @@
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 import re
 
 
@@ -283,6 +283,235 @@ class FileManager:
             return max(existing_counters) + 1
         else:
             return 1
+    
+    # === 边缘检测文件管理方法 ===
+    
+    def ensure_edge_detection_directories(self) -> bool:
+        """确保边缘检测相关目录存在"""
+        try:
+            from core.config import config_manager
+            
+            # 获取边缘检测保存路径配置
+            save_paths = config_manager.get_edge_save_paths()
+            
+            # 创建所有需要的目录
+            directories = [
+                save_paths.get('original_images', 'screenshots/edge_detection/original'),
+                save_paths.get('edge_results', 'screenshots/edge_detection/edges'),
+                save_paths.get('comparison_images', 'screenshots/edge_detection/comparison')
+            ]
+            
+            success = True
+            for directory in directories:
+                if not self.ensure_directory_exists(directory):
+                    success = False
+                    print(f"创建边缘检测目录失败: {directory}")
+            
+            return success
+            
+        except Exception as e:
+            print(f"确保边缘检测目录存在时出错: {e}")
+            return False
+    
+    def get_edge_detection_files(self, category: str = "all") -> List[Tuple[str, str, float]]:
+        """
+        获取边缘检测相关文件列表
+        
+        Args:
+            category: 文件类别 ("original", "edges", "comparison", "all")
+            
+        Returns:
+            文件信息列表
+        """
+        try:
+            from core.config import config_manager
+            save_paths = config_manager.get_edge_save_paths()
+            
+            files = []
+            
+            if category == "all" or category == "original":
+                original_dir = save_paths.get('original_images', 'screenshots/edge_detection/original')
+                original_files = self.get_screenshot_files(original_dir)
+                files.extend([(f"[原图] {f[0]}", f[1], f[2]) for f in original_files])
+            
+            if category == "all" or category == "edges":
+                edges_dir = save_paths.get('edge_results', 'screenshots/edge_detection/edges')
+                edge_files = self.get_screenshot_files(edges_dir)
+                files.extend([(f"[边缘] {f[0]}", f[1], f[2]) for f in edge_files])
+            
+            if category == "all" or category == "comparison":
+                comp_dir = save_paths.get('comparison_images', 'screenshots/edge_detection/comparison')
+                comp_files = self.get_screenshot_files(comp_dir)
+                files.extend([(f"[对比] {f[0]}", f[1], f[2]) for f in comp_files])
+            
+            # 按修改时间排序
+            files.sort(key=lambda x: x[2], reverse=True)
+            
+            return files
+            
+        except Exception as e:
+            print(f"获取边缘检测文件列表失败: {e}")
+            return []
+    
+    def generate_edge_detection_filename(self, category: str = "edges", 
+                                       base_name: str = None, 
+                                       extension: str = "png") -> str:
+        """
+        生成边缘检测结果文件名
+        
+        Args:
+            category: 文件类别 ("original", "edges", "comparison")
+            base_name: 基础文件名，如果为None则自动生成
+            extension: 文件扩展名
+            
+        Returns:
+            完整的文件名
+        """
+        if base_name is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            counter = self.get_next_counter()
+            base_name = f"edge_detection_{counter}_{timestamp}"
+        
+        # 添加类别前缀
+        if category == "original":
+            prefix = "original_"
+        elif category == "edges":
+            prefix = "edges_"
+        elif category == "comparison":
+            prefix = "comparison_"
+        else:
+            prefix = ""
+        
+        return f"{prefix}{base_name}.{extension}"
+    
+    def get_edge_detection_file_path(self, category: str, filename: str) -> str:
+        """
+        获取边缘检测文件的完整路径
+        
+        Args:
+            category: 文件类别 ("original", "edges", "comparison")
+            filename: 文件名
+            
+        Returns:
+            完整文件路径
+        """
+        try:
+            from core.config import config_manager
+            save_paths = config_manager.get_edge_save_paths()
+            
+            if category == "original":
+                directory = save_paths.get('original_images', 'screenshots/edge_detection/original')
+            elif category == "edges":
+                directory = save_paths.get('edge_results', 'screenshots/edge_detection/edges')
+            elif category == "comparison":
+                directory = save_paths.get('comparison_images', 'screenshots/edge_detection/comparison')
+            else:
+                # 默认使用边缘结果目录
+                directory = save_paths.get('edge_results', 'screenshots/edge_detection/edges')
+            
+            self.ensure_directory_exists(directory)
+            return str(Path(directory) / filename)
+            
+        except Exception as e:
+            print(f"获取边缘检测文件路径失败: {e}")
+            # 回退到默认路径
+            default_dir = f"screenshots/edge_detection/{category}"
+            self.ensure_directory_exists(default_dir)
+            return str(Path(default_dir) / filename)
+    
+    def cleanup_edge_detection_files(self, days_old: int = 30) -> int:
+        """
+        清理旧的边缘检测文件
+        
+        Args:
+            days_old: 保留天数，超过这个天数的文件将被删除
+            
+        Returns:
+            删除的文件数量
+        """
+        import time
+        
+        try:
+            from core.config import config_manager
+            save_paths = config_manager.get_edge_save_paths()
+            
+            directories = [
+                save_paths.get('original_images', 'screenshots/edge_detection/original'),
+                save_paths.get('edge_results', 'screenshots/edge_detection/edges'),
+                save_paths.get('comparison_images', 'screenshots/edge_detection/comparison')
+            ]
+            
+            cutoff_time = time.time() - (days_old * 24 * 60 * 60)
+            deleted_count = 0
+            
+            for directory in directories:
+                dir_path = Path(directory)
+                if not dir_path.exists():
+                    continue
+                
+                for file_path in dir_path.iterdir():
+                    if file_path.is_file():
+                        if file_path.stat().st_mtime < cutoff_time:
+                            try:
+                                file_path.unlink()
+                                deleted_count += 1
+                                print(f"已删除旧文件: {file_path}")
+                            except Exception as e:
+                                print(f"删除文件失败 {file_path}: {e}")
+            
+            return deleted_count
+            
+        except Exception as e:
+            print(f"清理边缘检测文件失败: {e}")
+            return 0
+    
+    def get_edge_detection_statistics(self) -> Dict[str, Any]:
+        """
+        获取边缘检测文件统计信息
+        
+        Returns:
+            统计信息字典
+        """
+        try:
+            from core.config import config_manager
+            save_paths = config_manager.get_edge_save_paths()
+            
+            stats = {
+                'original_count': 0,
+                'edges_count': 0,
+                'comparison_count': 0,
+                'total_size': 0,
+                'directories': {}
+            }
+            
+            categories = {
+                'original': save_paths.get('original_images', 'screenshots/edge_detection/original'),
+                'edges': save_paths.get('edge_results', 'screenshots/edge_detection/edges'),
+                'comparison': save_paths.get('comparison_images', 'screenshots/edge_detection/comparison')
+            }
+            
+            for category, directory in categories.items():
+                files = self.get_screenshot_files(directory)
+                count = len(files)
+                size = self.get_directory_size(directory)
+                
+                stats[f'{category}_count'] = count
+                stats['total_size'] += size
+                stats['directories'][category] = {
+                    'path': directory,
+                    'count': count,
+                    'size': size,
+                    'size_formatted': self.format_file_size(size)
+                }
+            
+            stats['total_files'] = stats['original_count'] + stats['edges_count'] + stats['comparison_count']
+            stats['total_size_formatted'] = self.format_file_size(stats['total_size'])
+            
+            return stats
+            
+        except Exception as e:
+            print(f"获取边缘检测统计信息失败: {e}")
+            return {}
 
 
 # 全局文件管理器实例

@@ -72,6 +72,47 @@ class ConfigManager:
                 "always_on_top": False,  # 窗口置顶
                 "minimize_to_tray": True,  # 最小化到托盘
             },
+            "edge_detection": {
+                "enabled": True,  # 是否启用边缘检测功能
+                "canny_params": {
+                    "threshold1": 50,        # 低阈值
+                    "threshold2": 150,       # 高阈值  
+                    "aperture_size": 3,      # Sobel算子大小
+                    "l2_gradient": False     # 梯度计算方式
+                },
+                "preprocessing": {
+                    "gaussian_blur": True,
+                    "blur_kernel_size": 5,
+                    "median_filter": False,
+                    "median_kernel_size": 5,
+                    "clahe_enabled": False,
+                    "clahe_clip_limit": 2.0
+                },
+                "postprocessing": {
+                    "morphology_enabled": False,    # 形态学操作
+                    "morph_kernel_size": 3,
+                    "edge_thinning": False,         # 边缘细化
+                    "remove_noise": True            # 噪声去除
+                },
+                "display": {
+                    "view_mode": "comparison",      # 显示模式: "original", "edges", "comparison"
+                    "edge_color": [0, 255, 0],     # 边缘颜色 (BGR)
+                    "overlay_opacity": 0.7,        # 叠加透明度
+                    "zoom_enabled": True,          # 缩放功能
+                    "pan_enabled": True            # 平移功能
+                },
+                "save_paths": {
+                    "original_images": "screenshots/edge_detection/original",
+                    "edge_results": "screenshots/edge_detection/edges", 
+                    "comparison_images": "screenshots/edge_detection/comparison"
+                },
+                "import_export": {
+                    "supported_formats": ["png", "jpg", "jpeg", "bmp", "tiff"],
+                    "auto_resize": True,
+                    "max_image_size": [2048, 2048],
+                    "preserve_aspect_ratio": True
+                }
+            },
             "general": {
                 "auto_create_directory": True,  # 自动创建保存目录
                 "show_notifications": True,  # 显示通知
@@ -358,6 +399,152 @@ class ConfigManager:
             self.set_custom_circle_center(params["center_x"], params["center_y"])
         if "radius" in params:
             self.set_custom_circle_radius(params["radius"])
+    
+    # === 边缘检测配置方法 ===
+    
+    def is_edge_detection_enabled(self) -> bool:
+        """获取边缘检测是否启用"""
+        return self.get('edge_detection.enabled', True)
+    
+    def set_edge_detection_enabled(self, enabled: bool):
+        """设置边缘检测启用状态"""
+        self.set('edge_detection.enabled', enabled)
+    
+    def get_canny_params(self) -> Dict[str, Any]:
+        """获取Canny边缘检测参数"""
+        return self.get('edge_detection.canny_params', {
+            "threshold1": 50,
+            "threshold2": 150,
+            "aperture_size": 3,
+            "l2_gradient": False
+        })
+    
+    def set_canny_params(self, params: Dict[str, Any]):
+        """设置Canny边缘检测参数"""
+        current_params = self.get_canny_params()
+        current_params.update(params)
+        self.set('edge_detection.canny_params', current_params)
+    
+    def get_edge_preprocessing_params(self) -> Dict[str, Any]:
+        """获取边缘检测预处理参数"""
+        return self.get('edge_detection.preprocessing', {
+            "gaussian_blur": True,
+            "blur_kernel_size": 5,
+            "median_filter": False,
+            "median_kernel_size": 5,
+            "clahe_enabled": False,
+            "clahe_clip_limit": 2.0
+        })
+    
+    def set_edge_preprocessing_params(self, params: Dict[str, Any]):
+        """设置边缘检测预处理参数"""
+        current_params = self.get_edge_preprocessing_params()
+        current_params.update(params)
+        self.set('edge_detection.preprocessing', current_params)
+    
+    def get_edge_postprocessing_params(self) -> Dict[str, Any]:
+        """获取边缘检测后处理参数"""
+        return self.get('edge_detection.postprocessing', {
+            "morphology_enabled": False,
+            "morph_kernel_size": 3,
+            "edge_thinning": False,
+            "remove_noise": True
+        })
+    
+    def set_edge_postprocessing_params(self, params: Dict[str, Any]):
+        """设置边缘检测后处理参数"""
+        current_params = self.get_edge_postprocessing_params()
+        current_params.update(params)
+        self.set('edge_detection.postprocessing', current_params)
+    
+    def get_edge_display_params(self) -> Dict[str, Any]:
+        """获取边缘检测显示参数"""
+        return self.get('edge_detection.display', {
+            "view_mode": "comparison",
+            "edge_color": [0, 255, 0],
+            "overlay_opacity": 0.7,
+            "zoom_enabled": True,
+            "pan_enabled": True
+        })
+    
+    def set_edge_display_params(self, params: Dict[str, Any]):
+        """设置边缘检测显示参数"""
+        current_params = self.get_edge_display_params()
+        current_params.update(params)
+        self.set('edge_detection.display', current_params)
+    
+    def get_edge_save_paths(self) -> Dict[str, str]:
+        """获取边缘检测保存路径配置"""
+        return self.get('edge_detection.save_paths', {
+            "original_images": "screenshots/edge_detection/original",
+            "edge_results": "screenshots/edge_detection/edges",
+            "comparison_images": "screenshots/edge_detection/comparison"
+        })
+    
+    def set_edge_save_paths(self, paths: Dict[str, str]):
+        """设置边缘检测保存路径配置"""
+        current_paths = self.get_edge_save_paths()
+        current_paths.update(paths)
+        self.set('edge_detection.save_paths', current_paths)
+    
+    def get_edge_import_export_params(self) -> Dict[str, Any]:
+        """获取边缘检测导入导出参数"""
+        return self.get('edge_detection.import_export', {
+            "supported_formats": ["png", "jpg", "jpeg", "bmp", "tiff"],
+            "auto_resize": True,
+            "max_image_size": [2048, 2048],
+            "preserve_aspect_ratio": True
+        })
+    
+    def set_edge_import_export_params(self, params: Dict[str, Any]):
+        """设置边缘检测导入导出参数"""
+        current_params = self.get_edge_import_export_params()
+        current_params.update(params)
+        self.set('edge_detection.import_export', current_params)
+    
+    def get_edge_original_directory(self) -> str:
+        """获取边缘检测原始图像保存目录"""
+        paths = self.get_edge_save_paths()
+        return paths.get('original_images', 'screenshots/edge_detection/original')
+    
+    def get_edge_results_directory(self) -> str:
+        """获取边缘检测结果保存目录"""
+        paths = self.get_edge_save_paths()
+        return paths.get('edge_results', 'screenshots/edge_detection/edges')
+    
+    def get_edge_comparison_directory(self) -> str:
+        """获取边缘检测对比图像保存目录"""
+        paths = self.get_edge_save_paths()
+        return paths.get('comparison_images', 'screenshots/edge_detection/comparison')
+    
+    def get_all_edge_detection_params(self) -> Dict[str, Any]:
+        """获取所有边缘检测参数"""
+        return {
+            "enabled": self.is_edge_detection_enabled(),
+            "canny_params": self.get_canny_params(),
+            "preprocessing": self.get_edge_preprocessing_params(),
+            "postprocessing": self.get_edge_postprocessing_params(),
+            "display": self.get_edge_display_params(),
+            "save_paths": self.get_edge_save_paths(),
+            "import_export": self.get_edge_import_export_params()
+        }
+    
+    def set_all_edge_detection_params(self, params: Dict[str, Any]):
+        """设置所有边缘检测参数"""
+        if "enabled" in params:
+            self.set_edge_detection_enabled(params["enabled"])
+        if "canny_params" in params:
+            self.set_canny_params(params["canny_params"])
+        if "preprocessing" in params:
+            self.set_edge_preprocessing_params(params["preprocessing"])
+        if "postprocessing" in params:
+            self.set_edge_postprocessing_params(params["postprocessing"])
+        if "display" in params:
+            self.set_edge_display_params(params["display"])
+        if "save_paths" in params:
+            self.set_edge_save_paths(params["save_paths"])
+        if "import_export" in params:
+            self.set_edge_import_export_params(params["import_export"])
     
     def reset_to_defaults(self):
         """重置为默认配置"""

@@ -1,0 +1,1 @@
+numpy>=1.21.0\nopencv-python>=4.5.0\nPillow>=8.0.0\npywin32>=227; sys_platform == 'win32'\npyinstaller>=4.5; sys_platform == 'win32'

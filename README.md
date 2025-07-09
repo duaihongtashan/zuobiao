@@ -1,6 +1,9 @@
-# 截图工具 - Jietu
+# Jietu 截图工具
+[![Python Version](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE.md)
+[![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)](#)
 
-一款为Windows系统优化的高性能截图工具，支持矩形、圆形、连续截图、全局快捷键和智能坐标记录等多种功能。
+一款为Windows系统优化的高性能截图与图像处理工具，支持矩形、圆形、连续截图、全局快捷键、智能坐标记录以及边缘检测等多种功能。
 
 ## ✨ 主要特性
 
@@ -11,6 +14,8 @@
 - **智能圆形检测**:
   - 基于OpenCV自动识别图像中的圆形，并支持一键截图。
   - 可自定义检测参数（如半径、距离、阈值）。
+- **高级图像处理**:
+  - **Canny边缘检测**: 对导入的图像或截图进行边缘检测，支持实时参数调整和效果预览。
 - **强大的快捷键系统**:
   - 完全可自定义的全局快捷键。
   - 支持 `Ctrl`, `Alt`, `Shift` 组合键以及功能键 `F1-F12`。
@@ -30,27 +35,33 @@
 ### 1. 环境要求
 - Windows 10/11
 - [Python 3.12+](https://www.python.org/downloads/)
-- [uv 包管理器](https://github.com/astral-sh/uv)
 
 ### 2. 安装依赖
-在项目根目录下打开终端，运行：
+我们提供两种安装方式：
+
+**方式一：使用`uv`包管理器 (推荐)**
 ```bash
+# 安装或更新 uv
+pip install -U uv
+# 在项目根目录同步依赖
 uv sync
 ```
+
+**方式二：使用内置安装脚本**
+如果您不想使用`uv`，可以直接运行项目中的Python安装脚本：
+```bash
+python windows_install.py
+```
+该脚本会自动创建虚拟环境并安装所有必需的依赖。
 
 ### 3. 运行程序
 推荐使用管理员权限启动，以确保全局快捷键正常工作：
 ```bash
-python start_as_admin.py
-```
-你也可以直接运行主程序（快捷键功能可能受限）：
-```bash
 python main.py
+# 如果你使用uv，可以用uv run启动
+# uv run python main.py
 ```
-或者，如果安装了uv，使用uv运行：
-```bash
-uv run python start_as_admin.py
-```
+> **注意**: `start_as_admin.py` 和 `start_windows.py` 脚本已被移除，请直接运行 `main.py`。如果需要管理员权限，请手动以管理员身份运行你的终端。
 
 ## 📋 使用指南
 
@@ -66,6 +77,13 @@ uv run python start_as_admin.py
 4.  检测成功后，可以勾选 **启用自定义圆形截图**，程序会自动使用第一个检测到的圆形参数。
 5.  之后的所有截图操作（包括快捷键）都将是圆形截图。
 
+### 边缘检测
+1.  切换到 **边缘检测** 标签页。
+2.  点击 **导入图片**，选择一张图片进行处理。
+3.  通过拖动滑块实时调整 **Canny边缘检测** 的两个阈值参数。
+4.  处理结果会实时显示在画布上。
+5.  可以点击 **保存结果** 将处理后的图像保存下来。
+
 ### 自定义快捷键
 1.  切换到 **快捷键设置** 标签页。
 2.  直接在输入框中修改为你想要的快捷键组合（格式如 `ctrl+shift+a`）。
@@ -73,29 +91,48 @@ uv run python start_as_admin.py
 
 ## 📦 打包为EXE
 
-项目已配置好通过 `PyInstaller` 打包。
+如果您需要将此工具打包为单个可执行文件，可以使用 `PyInstaller`。
 
 1.  **安装 PyInstaller**:
     ```bash
     uv pip install pyinstaller
     ```
 2.  **执行打包**:
-    项目内置的 `截图工具-Jietu.spec` 文件已经过优化（如排除了 `PyQt6` 以减小体积）。直接使用此配置文件进行打包：
+    我们提供了一个基础的 `.spec` 配置文件。您可以根据需要进行修改。
     ```bash
     uv run pyinstaller "截图工具-Jietu.spec"
     ```
 3.  **获取结果**:
     打包完成后，可执行文件位于 `dist/截图工具-Jietu.exe`。
 
-## ⚙️ 配置文件 `config.json`
+## ⚙️ 项目结构
+```
+zuobiao/
+├── core/                  # 核心功能模块
+│   ├── circle_capture.py    # 圆形截图
+│   ├── circle_detection.py  # 圆形检测
+│   ├── edge_detection.py    # 边缘检测
+│   ├── hotkey.py            # 快捷键管理
+│   └── screenshot.py        # 基础截图功能
+├── gui/                   # 图形用户界面
+│   ├── main_window.py       # 主窗口
+│   ├── edge_detection_tab.py # 边缘检测标签页
+│   └── ...
+├── utils/                 # 工具类模块
+│   └── file_manager.py      # 文件管理
+├── main.py                # 主程序入口
+├── config.json            # 配置文件
+└── README.md              # 就是你正在看的这个文件
+```
 
-程序的所有配置都保存在根目录的 `config.json` 文件中，你可以直接修改此文件进行高级配置。
+## 🤔 常见问题排查
 
--   `screenshot`: 矩形截图和连续截图的设置。
--   `hotkeys`: 全局快捷键设置。
--   `circle_detection`: 圆形检测和圆形截图的相关参数。
--   `ui`: 界面相关的设置，如窗口位置。
+**Q: 提示 "OpenCV not found" 或 "缺少模块..." 怎么办?**
+A: 这通常意味着你的Python环境中没有安装必要的依赖。请确保你已经按照 **[快速开始](#-快速开始)** 中的步骤正确安装了依赖。如果你手动管理环境，请确保已激活正确的虚拟环境。
+
+**Q: 全局快捷键无效怎么办?**
+A: 全局快捷键需要程序有较高的权限才能监听系统范围的键盘事件。请尝试以 **管理员身份** 运行你的终端或IDE，然后再启动程序。
 
 ## 🤝 贡献
 
-本项目从一个简单的截图脚本，经过多次迭代，不断修复问题并添加新功能，例如从WSL迁移到Windows、重构快捷键系统、添加圆形检测等。欢迎提交问题和改进建议。
+本项目从一个简单的截图脚本，经过多次迭代，不断修复问题并添加新功能，例如从WSL迁移到Windows、重构快捷键系统、添加圆形和边缘检测等。欢迎提交问题和改进建议。

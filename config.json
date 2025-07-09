@@ -76,6 +76,60 @@
     "always_on_top": false,
     "minimize_to_tray": true
   },
+  "edge_detection": {
+    "enabled": true,
+    "canny_params": {
+      "threshold1": 1,
+      "threshold2": 21,
+      "aperture_size": 3,
+      "l2_gradient": false
+    },
+    "preprocessing": {
+      "gaussian_blur": true,
+      "blur_kernel_size": 5,
+      "median_filter": false,
+      "median_kernel_size": 5,
+      "clahe_enabled": false,
+      "clahe_clip_limit": 3.0
+    },
+    "postprocessing": {
+      "morphology_enabled": false,
+      "morph_kernel_size": 3,
+      "edge_thinning": true,
+      "remove_noise": false
+    },
+    "display": {
+      "view_mode": "edges",
+      "edge_color": [
+        0,
+        255,
+        0
+      ],
+      "overlay_opacity": 0.7,
+      "zoom_enabled": true,
+      "pan_enabled": true
+    },
+    "save_paths": {
+      "original_images": "screenshots/edge_detection/original",
+      "edge_results": "screenshots/edge_detection/edges",
+      "comparison_images": "screenshots/edge_detection/comparison"
+    },
+    "import_export": {
+      "supported_formats": [
+        "png",
+        "jpg",
+        "jpeg",
+        "bmp",
+        "tiff"
+      ],
+      "auto_resize": true,
+      "max_image_size": [
+        2048,
+        2048
+      ],
+      "preserve_aspect_ratio": true
+    }
+  },
   "general": {
     "auto_create_directory": true,
     "show_notifications": true,

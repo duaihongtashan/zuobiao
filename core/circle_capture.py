@@ -19,7 +19,9 @@ class CircleCapture:
     def __init__(self):
         self.save_directory = "screenshots/circles"
         self.data_directory = "screenshots/circle_data"
-        self.anti_alias_scale = 4  # 抗锯齿缩放倍数
+        self.anti_alias_scale = 4  # 默认抗锯齿缩放倍数
+        self.max_anti_alias_pixels = 4096 * 4096  # 抗锯齿处理的最大像素数
+        self.memory_limit_mb = 256  # 单个圆形提取的内存限制
         
         # 确保目录存在
         Path(self.save_directory).mkdir(parents=True, exist_ok=True)
@@ -59,32 +61,71 @@ class CircleCapture:
         cv2.circle(mask, (center_x, center_y), radius, 255, -1)
         return mask
     
+    def _calculate_adaptive_scale(self, width: int, height: int, radius: int) -> int:
+        """计算自适应的抗锯齿缩放系数"""
+        # 计算在最大缩放下的像素数
+        max_scale_pixels = width * height * (self.anti_alias_scale ** 2)
+        
+        # 如果超过限制，动态调整缩放系数
+        if max_scale_pixels > self.max_anti_alias_pixels:
+            # 计算安全的缩放系数
+            safe_scale = int((self.max_anti_alias_pixels / (width * height)) ** 0.5)
+            safe_scale = max(1, min(safe_scale, self.anti_alias_scale))
+            return safe_scale
+        
+        # 根据圆形大小调整缩放系数
+        if radius < 20:
+            return min(6, self.anti_alias_scale)  # 小圆形需要更高的抗锯齿
+        elif radius < 50:
+            return min(4, self.anti_alias_scale)  # 中等圆形使用默认缩放
+        elif radius < 100:
+            return min(3, self.anti_alias_scale)  # 较大圆形适当减少缩放
+        else:
+            return min(2, self.anti_alias_scale)  # 大圆形使用低缩放
+    
     def _create_anti_aliased_mask(self, width: int, height: int,
                                  center_x: int, center_y: int, radius: int) -> np.ndarray:
-        """创建抗锯齿圆形蒙版"""
-        scale = self.anti_alias_scale
+        """创建抗锯齿圆形蒙版（自适应缩放）"""
+        # 计算自适应缩放系数
+        scale = self._calculate_adaptive_scale(width, height, radius)
         
-        # 创建大尺寸蒙版
+        # 计算内存需求估算
         large_width = width * scale
         large_height = height * scale
-        large_mask = np.zeros((large_height, large_width), dtype=np.uint8)
+        estimated_memory_mb = (large_width * large_height) / (1024 * 1024)
         
-        # 在大尺寸上绘制圆形
-        cv2.circle(large_mask, 
-                  (center_x * scale, center_y * scale), 
-                  radius * scale, 255, -1)
+        # 如果内存需求超过限制，使用简单蒙版
+        if estimated_memory_mb > self.memory_limit_mb:
+            print(f"内存需求超过限制 ({estimated_memory_mb:.1f}MB > {self.memory_limit_mb}MB)，使用简单蒙版")
+            return self._create_simple_mask(width, height, center_x, center_y, radius)
         
-        # 降采样产生平滑边缘
-        smooth_mask = cv2.resize(large_mask, (width, height), 
-                               interpolation=cv2.INTER_AREA)
-        
-        return smooth_mask
+        try:
+            # 创建大尺寸蒙版
+            large_mask = np.zeros((large_height, large_width), dtype=np.uint8)
+            
+            # 在大尺寸上绘制圆形
+            cv2.circle(large_mask, 
+                      (center_x * scale, center_y * scale), 
+                      radius * scale, 255, -1)
+            
+            # 降采样产生平滑边缘
+            smooth_mask = cv2.resize(large_mask, (width, height), 
+                                   interpolation=cv2.INTER_AREA)
+            
+            return smooth_mask
+            
+        except MemoryError:
+            print(f"抗锯齿处理内存不足，使用简单蒙版")
+            return self._create_simple_mask(width, height, center_x, center_y, radius)
+        except Exception as e:
+            print(f"抗锯齿处理失败: {e}，使用简单蒙版")
+            return self._create_simple_mask(width, height, center_x, center_y, radius)
     
     def extract_circle_region(self, image: np.ndarray, circle: Circle,
                              padding: int = 0, 
                              transparent_background: bool = True) -> Optional[np.ndarray]:
         """
-        提取圆形区域
+        提取圆形区域（优化内存使用）
         
         Args:
             image: 原始图像
@@ -115,34 +156,63 @@ class CircleCapture:
         region_cx = x - x1
         region_cy = y - y1
         
-        # 创建圆形蒙版
-        mask = self.create_circle_mask(region.shape[1], region.shape[0], 
-                                     region_cx, region_cy, r)
+        # 计算内存需求估算
+        region_pixels = region.shape[0] * region.shape[1]
+        estimated_memory_mb = (region_pixels * 4 * 4) / (1024 * 1024)  # RGBA + 抗锯齿缩放
         
-        if transparent_background:
-            # 创建带透明背景的图像
-            if len(region.shape) == 2:
-                region = cv2.cvtColor(region, cv2.COLOR_GRAY2BGR)
+        # 如果内存需求过大，使用简单模式
+        use_anti_alias = estimated_memory_mb <= self.memory_limit_mb
+        
+        try:
+            # 创建圆形蒙版
+            mask = self.create_circle_mask(region.shape[1], region.shape[0], 
+                                         region_cx, region_cy, r, anti_alias=use_anti_alias)
             
-            # 转换为RGBA
-            rgba_image = cv2.cvtColor(region, cv2.COLOR_BGR2RGBA)
-            
-            # 应用蒙版作为Alpha通道
-            rgba_image[:, :, 3] = mask
-            
-            return rgba_image
-        else:
-            # 应用蒙版到原图像
-            if len(region.shape) == 3:
-                masked_region = region.copy()
-                for i in range(3):
-                    masked_region[:, :, i] = cv2.bitwise_and(
-                        masked_region[:, :, i], mask
-                    )
+            if transparent_background:
+                # 创建带透明背景的图像
+                if len(region.shape) == 2:
+                    region = cv2.cvtColor(region, cv2.COLOR_GRAY2BGR)
+                
+                # 转换为RGBA
+                rgba_image = cv2.cvtColor(region, cv2.COLOR_BGR2RGBA)
+                
+                # 应用蒙版作为Alpha通道
+                rgba_image[:, :, 3] = mask
+                
+                return rgba_image
             else:
-                masked_region = cv2.bitwise_and(region, mask)
+                # 应用蒙版到原图像
+                if len(region.shape) == 3:
+                    masked_region = region.copy()
+                    for i in range(3):
+                        masked_region[:, :, i] = cv2.bitwise_and(
+                            masked_region[:, :, i], mask
+                        )
+                else:
+                    masked_region = cv2.bitwise_and(region, mask)
+                
+                return masked_region
+                
+        except MemoryError:
+            print(f"圆形提取内存不足，使用简单模式")
+            # 使用简单蒙版重试
+            mask = self.create_circle_mask(region.shape[1], region.shape[0], 
+                                         region_cx, region_cy, r, anti_alias=False)
             
-            return masked_region
+            if transparent_background:
+                if len(region.shape) == 2:
+                    region = cv2.cvtColor(region, cv2.COLOR_GRAY2BGR)
+                rgba_image = cv2.cvtColor(region, cv2.COLOR_BGR2RGBA)
+                rgba_image[:, :, 3] = mask
+                return rgba_image
+            else:
+                if len(region.shape) == 3:
+                    masked_region = region.copy()
+                    for i in range(3):
+                        masked_region[:, :, i] = cv2.bitwise_and(masked_region[:, :, i], mask)
+                else:
+                    masked_region = cv2.bitwise_and(region, mask)
+                return masked_region
     
     def capture_circles(self, image: np.ndarray, circles: List[Circle],
                        save_individual: bool = True,
@@ -398,6 +468,11 @@ class CircleCapture:
         
         return preview
     
+    def set_memory_limit(self, memory_limit_mb: float):
+        """设置内存限制"""
+        self.memory_limit_mb = memory_limit_mb
+        print(f"设置圆形截图内存限制: {memory_limit_mb}MB")
+    
     def get_capture_statistics(self) -> Dict[str, Any]:
         """获取截图统计信息"""
         try:
@@ -418,7 +493,9 @@ class CircleCapture:
                 "total_file_size_bytes": total_size,
                 "total_file_size_mb": round(total_size / (1024 * 1024), 2),
                 "save_directory": self.save_directory,
-                "data_directory": self.data_directory
+                "data_directory": self.data_directory,
+                "memory_limit_mb": self.memory_limit_mb,
+                "max_anti_alias_pixels": self.max_anti_alias_pixels
             }
             
         except Exception as e:

@@ -35,6 +35,9 @@ from core.circle_capture import circle_capture
 from utils.file_manager import file_manager
 from utils.coordinate_recorder import CoordinateRecorder
 
+# 边缘检测标签页导入（延迟导入）
+edge_detection_tab = None
+
 
 class MainWindow:
     """主窗口类"""
@@ -360,6 +363,9 @@ class MainWindow:
                                              foreground="blue")
         custom_circle_status_label.grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
         
+        # === 边缘检测标签页 ===
+        self.create_edge_detection_tab()
+        
         # === 在主框架底部添加控制按钮和状态显示 ===
         
         # 控制按钮 - 重新组织布局
@@ -668,6 +674,9 @@ class MainWindow:
             
             # 保存自定义圆形设置
             self.apply_custom_circle_settings()
+            
+            # 保存边缘检测设置
+            self.save_edge_detection_settings()
             
             config_manager.save_config()
             self.update_status("设置已保存")
@@ -1485,6 +1494,235 @@ class MainWindow:
             messagebox.showerror("错误", f"填充右下角坐标失败: {e}")
     
 
+
+
+    def diagnose_opencv_status(self):
+        """诊断 OpenCV 状态"""
+        diagnosis = {
+            'opencv_available': False,
+            'opencv_version': None,
+            'opencv_error': None,
+            'edge_tab_available': False,
+            'edge_tab_error': None,
+            'system_info': {}
+        }
+        
+        # 检查 OpenCV
+        try:
+            import cv2
+            diagnosis['opencv_available'] = True
+            diagnosis['opencv_version'] = cv2.__version__
+        except ImportError as e:
+            diagnosis['opencv_error'] = f"OpenCV 导入失败: {e}"
+        except Exception as e:
+            diagnosis['opencv_error'] = f"OpenCV 检查异常: {e}"
+        
+        # 检查边缘检测标签页
+        try:
+            from gui.edge_detection_tab import EdgeDetectionTab
+            diagnosis['edge_tab_available'] = True
+        except ImportError as e:
+            diagnosis['edge_tab_error'] = f"边缘检测标签页导入失败: {e}"
+        except Exception as e:
+            diagnosis['edge_tab_error'] = f"边缘检测标签页检查异常: {e}"
+        
+        # 收集系统信息
+        try:
+            import sys
+            import platform
+            diagnosis['system_info'] = {
+                'python_version': sys.version,
+                'platform': platform.platform(),
+                'architecture': platform.architecture()
+            }
+        except:
+            pass
+        
+        return diagnosis
+
+    def create_edge_detection_tab(self):
+        """创建边缘检测标签页 - 增强诊断版本"""
+        global edge_detection_tab
+        
+        # 先进行全面诊断
+        diagnosis = self.diagnose_opencv_status()
+        
+        try:
+            # 如果 OpenCV 和边缘检测标签页都可用
+            if diagnosis['opencv_available'] and diagnosis['edge_tab_available']:
+                # 延迟导入边缘检测标签页
+                if edge_detection_tab is None:
+                    from gui.edge_detection_tab import EdgeDetectionTab
+                    edge_detection_tab = EdgeDetectionTab
+                
+                # 创建边缘检测标签页
+                edge_tab_frame = ttk.Frame(self.notebook)
+                self.notebook.add(edge_tab_frame, text="边缘检测")
+                
+                # 创建边缘检测标签页实例
+                self.edge_detection_tab = edge_detection_tab(edge_tab_frame)
+                
+                # 将边缘检测标签页的框架添加到父框架
+                self.edge_detection_tab.get_frame().pack(fill=tk.BOTH, expand=True)
+                
+                print("✅ 边缘检测标签页已创建")
+                return
+            
+            # 如果有问题，创建诊断信息标签页
+            self.create_diagnosis_tab(diagnosis)
+            
+        except Exception as e:
+            print(f"❌ 创建边缘检测标签页时发生异常: {e}")
+            # 创建异常诊断标签页
+            diagnosis['unexpected_error'] = str(e)
+            self.create_diagnosis_tab(diagnosis)
+
+    def create_diagnosis_tab(self, diagnosis):
+        """创建诊断信息标签页"""
+        # 创建诊断标签页
+        diag_frame = ttk.Frame(self.notebook)
+        self.notebook.add(diag_frame, text="边缘检测")
+        
+        # 创建滚动区域
+        canvas = tk.Canvas(diag_frame, bg='white')
+        scrollbar = ttk.Scrollbar(diag_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # 布局滚动区域
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # 标题
+        title_label = ttk.Label(scrollable_frame, text="边缘检测功能诊断", 
+                              font=("", 14, "bold"))
+        title_label.pack(pady=(10, 20))
+        
+        # OpenCV 状态
+        opencv_frame = ttk.LabelFrame(scrollable_frame, text="OpenCV 状态", padding="10")
+        opencv_frame.pack(fill="x", padx=10, pady=5)
+        
+        if diagnosis['opencv_available']:
+            ttk.Label(opencv_frame, text="✅ OpenCV 已安装", 
+                     foreground="green", font=("", 11, "bold")).pack(anchor="w")
+            ttk.Label(opencv_frame, text=f"版本: {diagnosis['opencv_version']}", 
+                     font=("", 10)).pack(anchor="w")
+        else:
+            ttk.Label(opencv_frame, text="❌ OpenCV 不可用", 
+                     foreground="red", font=("", 11, "bold")).pack(anchor="w")
+            ttk.Label(opencv_frame, text=diagnosis['opencv_error'], 
+                     foreground="red", font=("", 10), wraplength=400).pack(anchor="w")
+        
+        # 边缘检测标签页状态
+        tab_frame = ttk.LabelFrame(scrollable_frame, text="边缘检测模块状态", padding="10")
+        tab_frame.pack(fill="x", padx=10, pady=5)
+        
+        if diagnosis['edge_tab_available']:
+            ttk.Label(tab_frame, text="✅ 边缘检测模块可用", 
+                     foreground="green", font=("", 11, "bold")).pack(anchor="w")
+        else:
+            ttk.Label(tab_frame, text="❌ 边缘检测模块不可用", 
+                     foreground="red", font=("", 11, "bold")).pack(anchor="w")
+            ttk.Label(tab_frame, text=diagnosis['edge_tab_error'], 
+                     foreground="red", font=("", 10), wraplength=400).pack(anchor="w")
+        
+        # 系统信息
+        if diagnosis['system_info']:
+            sys_frame = ttk.LabelFrame(scrollable_frame, text="系统信息", padding="10")
+            sys_frame.pack(fill="x", padx=10, pady=5)
+            
+            for key, value in diagnosis['system_info'].items():
+                ttk.Label(sys_frame, text=f"{key}: {value}", 
+                         font=("", 9), wraplength=400).pack(anchor="w")
+        
+        # 解决方案建议
+        solution_frame = ttk.LabelFrame(scrollable_frame, text="解决方案", padding="10")
+        solution_frame.pack(fill="x", padx=10, pady=5)
+        
+        solutions = []
+        
+        if not diagnosis['opencv_available']:
+            solutions.append("1. 确认 OpenCV 已正确安装：pip install opencv-python")
+            solutions.append("2. 尝试重新安装：pip uninstall opencv-python && pip install opencv-python")
+            solutions.append("3. 检查虚拟环境是否激活")
+            
+        if not diagnosis['edge_tab_available'] and diagnosis['opencv_available']:
+            solutions.append("4. 边缘检测模块导入失败，可能存在其他依赖问题")
+            solutions.append("5. 检查相关模块是否完整：PIL, numpy, tkinter")
+            
+        if 'unexpected_error' in diagnosis:
+            solutions.append(f"6. 发生意外错误：{diagnosis['unexpected_error']}")
+            
+        if not solutions:
+            solutions.append("✅ 系统状态正常，边缘检测功能应该可用")
+        
+        for solution in solutions:
+            ttk.Label(solution_frame, text=solution, font=("", 10), 
+                     wraplength=400).pack(anchor="w", pady=1)
+        
+        # 重新检测按钮
+        button_frame = ttk.Frame(scrollable_frame)
+        button_frame.pack(pady=20)
+        
+        ttk.Button(button_frame, text="重新检测", 
+                  command=self.refresh_edge_detection_tab).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="尝试修复", 
+                  command=self.attempt_opencv_fix).pack(side="left", padx=5)
+
+    def refresh_edge_detection_tab(self):
+        """刷新边缘检测标签页"""
+        try:
+            # 移除现有的边缘检测标签页
+            for i in range(self.notebook.index("end")):
+                if self.notebook.tab(i, "text") == "边缘检测":
+                    self.notebook.forget(i)
+                    break
+            
+            # 重新创建
+            self.create_edge_detection_tab()
+            self.update_status("边缘检测标签页已刷新")
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"刷新失败: {e}")
+
+    def attempt_opencv_fix(self):
+        """尝试自动修复 OpenCV 问题"""
+        try:
+            # 简单的重新导入尝试
+            import importlib
+            import sys
+            
+            # 清除可能的模块缓存
+            modules_to_clear = ['cv2', 'gui.edge_detection_tab']
+            for module_name in modules_to_clear:
+                if module_name in sys.modules:
+                    del sys.modules[module_name]
+            
+            # 尝试重新导入
+            import cv2
+            from gui.edge_detection_tab import EdgeDetectionTab
+            
+            # 如果成功，刷新标签页
+            self.refresh_edge_detection_tab()
+            messagebox.showinfo("成功", "OpenCV 问题已修复，请查看边缘检测标签页")
+            
+        except Exception as e:
+            messagebox.showerror("修复失败", f"自动修复失败: {e}\n\n请手动检查 OpenCV 安装状态")
+    
+    def save_edge_detection_settings(self):
+        """保存边缘检测设置"""
+        try:
+            if hasattr(self, 'edge_detection_tab') and self.edge_detection_tab:
+                self.edge_detection_tab.save_settings()
+        except Exception as e:
+            print(f"保存边缘检测设置失败: {e}")
 
 
 def create_main_window():
